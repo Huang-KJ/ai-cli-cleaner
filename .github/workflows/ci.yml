@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-26]
+        node-version: [22.22.2, 24.15.0, 26.0.0, 22, 24, 26]
+        include:
+          - os: macos-26-intel
+            node-version: 24
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          check-latest: true
+          cache: npm
+      - name: Install pinned npm in runner temp
+        run: |
+          node scripts/bootstrap-npm.cjs "$RUNNER_TEMP/ai-cleaner-npm"
+          echo "$RUNNER_TEMP/ai-cleaner-npm/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Record runtime and architecture
+        run: |
+          sw_vers -productVersion
+          node -e 'console.log(JSON.stringify({ node: process.version, platform: process.platform, arch: process.arch }))'
+          npm --version
+      - run: npm ci
+      - name: Audit dependencies
+        run: node scripts/audit-dependencies.cjs
+      - run: npm run check

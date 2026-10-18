@@ -1,0 +1,26 @@
+name: Feature request
+description: Describe the need, use case, and intended data-handling boundaries.
+title: "[Feature] "
+body:
+  - type: markdown
+    attributes:
+      value: Use text or synthetic examples. Do not upload real conversations, databases, secrets, or private logs.
+  - type: textarea
+    id: need
+    attributes:
+      label: Problem to solve
+      description: Describe the use case and limitations of the current workflow.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Proposed behavior
+      description: Explain the intended outcome, affected agents, and data that must be preserved.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or synthetic examples
+      description: Optional. Do not include real user data.

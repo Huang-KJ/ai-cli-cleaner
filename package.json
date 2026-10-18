@@ -1,0 +1,86 @@
+{
+  "name": "ai-cli-cleaner",
+  "version": "0.1.0-beta.1",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Huang-KJ/ai-cli-cleaner.git"
+  },
+  "homepage": "https://github.com/Huang-KJ/ai-cli-cleaner#readme",
+  "bugs": {
+    "url": "https://github.com/Huang-KJ/ai-cli-cleaner/issues"
+  },
+  "packageManager": "npm@12.2.0",
+  "allowScripts": {
+    "fsevents": false
+  },
+  "description": "Safely delete local conversations from Codex, Copilot, Antigravity, OpenCode, and Grok.",
+  "keywords": [
+    "ai-agent",
+    "cli",
+    "conversation-cleaner",
+    "privacy",
+    "macos",
+    "codex",
+    "github-copilot",
+    "antigravity",
+    "opencode",
+    "grok"
+  ],
+  "type": "module",
+  "bin": {
+    "ai-cleaner": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "lib/native-helper.cjs",
+    "lib/claim-helper.cjs",
+    "native/claims.m",
+    "lib/version.cjs",
+    "vendor",
+    "docs/*.md",
+    "SECURITY.md",
+    "CONTRIBUTING.md"
+  ],
+  "scripts": {
+    "native:build": "node scripts/build-claims.mjs",
+    "clean": "node scripts/clean-build.mjs",
+    "prebuild": "npm run clean",
+    "build": "tsc -p tsconfig.json",
+    "postbuild": "chmod +x ./dist/index.js",
+    "pretest": "npm run build",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.test.json",
+    "verify:trash": "npm run build && node tests/verify-trash.mjs",
+    "check": "npm run typecheck && npm test",
+    "release:pack": "node scripts/package-release.mjs",
+    "prepack": "npm run check"
+  },
+  "dependencies": {
+    "@inquirer/core": "^12.0.4",
+    "commander": "^15.0.0",
+    "pretty-bytes": "^7.2.0"
+  },
+  "bundleDependencies": [
+    "@inquirer/core",
+    "commander",
+    "pretty-bytes"
+  ],
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.4"
+  },
+  "os": [
+    "darwin"
+  ],
+  "engines": {
+    "node": "^22.22.2 || ^24.15.0 || ^26.0.0",
+    "npm": ">=12 <13"
+  },
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/",
+    "tag": "beta"
+  }
+}

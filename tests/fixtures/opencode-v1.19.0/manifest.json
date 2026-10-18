@@ -1,0 +1,60 @@
+{
+  "formatVersion": 1,
+  "fixtureId": "opencode-sqlite-v1.19.0",
+  "provider": "opencode",
+  "providerVersion": "1.19.0",
+  "evidence": "source-derived-synthetic",
+  "upstreamDataVerified": false,
+  "upstreamAppReadback": "not-run-on-this-synthetic-fixture",
+  "commit": "733b2c627e5aec39cb33cc22373bdce33053ef2c",
+  "sourceSchemaObservedWith": "Official OpenCode 1.19.0 loopback serve API session creation and noReply message; fixture rows below are manually invented, not an upstream database dump.",
+  "sources": [
+    {
+      "path": "packages/core/src/session/sql.ts",
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/733b2c627e5aec39cb33cc22373bdce33053ef2c/packages/core/src/session/sql.ts",
+      "sha256": "8fe00bf61948678bfd5b4f993e1e3884fca8005abcce50a8192b1d06d2b65c10"
+    },
+    {
+      "path": "packages/core/src/event/sql.ts",
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/733b2c627e5aec39cb33cc22373bdce33053ef2c/packages/core/src/event/sql.ts",
+      "sha256": "8165dd09bfd9cb1a44ecaacf213d99053a642fe31e097bb6fa412a0e9f71c8ff"
+    },
+    {
+      "path": "packages/core/src/event.ts",
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/733b2c627e5aec39cb33cc22373bdce33053ef2c/packages/core/src/event.ts",
+      "sha256": "c9cde59028948b688d8c77826526bd51eac1b2b7c7b7b71425603ccef7e32fc4"
+    },
+    {
+      "path": "packages/schema/src/v1/session.ts",
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/733b2c627e5aec39cb33cc22373bdce33053ef2c/packages/schema/src/v1/session.ts",
+      "sha256": "8516f7405c91636e7a78ce9da099bf5bf307682a4320c9ad6d89888d80fac4fb"
+    },
+    {
+      "path": "packages/opencode/src/session/session.ts",
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/733b2c627e5aec39cb33cc22373bdce33053ef2c/packages/opencode/src/session/session.ts",
+      "sha256": "0c56ae3535e29cae0de51156eaba2842c0896309f1d6b12525566b4a8ba4c7f2"
+    },
+    {
+      "path": "packages/core/src/credential/sql.ts",
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/733b2c627e5aec39cb33cc22373bdce33053ef2c/packages/core/src/credential/sql.ts",
+      "sha256": "00c0e76e6d472ac6fba10cfaf662942efb9279c76261e92da328178ed54106e0"
+    },
+    {
+      "path": "packages/core/src/project/sql.ts",
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/733b2c627e5aec39cb33cc22373bdce33053ef2c/packages/core/src/project/sql.ts",
+      "sha256": "bcf48e11441a49df3fb586ccfcbb7996a2f18af29d0b8b1dfc0d8edb36e16959"
+    }
+  ],
+  "generation": {
+    "fixtureSource": "../../opencode-modern.test.ts",
+    "method": "Manually generated rows for all new session projections, event history and preserved tables; three sessions include an exact-prefix collision and a non-session aggregate; no user data or credential values.",
+    "privacy": "Only invented IDs, paths and synthetic no-credential values are used."
+  },
+  "contract": [
+    "session_context_epoch/session_input/session_message use exact session_id and reference session(id).",
+    "Durable session events use data.sessionID as aggregate_id; event references event_sequence with cascade. owner_id belongs to replay/claim ownership and is not a session selector.",
+    "Session.remove publishes Deleted then removes its aggregate history. Event replay executes projection callbacks, so deleting only the projection is incomplete.",
+    "Selected and reverse event ownership contradictions are rejected; message/input shared IDs must agree on session ownership.",
+    "credential/project_directory/data_migration/migration and all other unselected rows are preserved and checked; unknown user tables and triggers are rejected."
+  ]
+}

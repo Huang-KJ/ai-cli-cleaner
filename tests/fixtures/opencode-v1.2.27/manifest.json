@@ -1,0 +1,40 @@
+{
+  "formatVersion": 1,
+  "fixtureId": "opencode-sqlite-v1.2.27",
+  "provider": "opencode",
+  "providerVersion": "1.2.27",
+  "evidence": "source-derived-synthetic",
+  "upstreamDataVerified": false,
+  "upstreamAppReadback": "not-run",
+  "contract": "Local SQLite session discovery with parent_id and time_updated; selective deletion tested with database readback.",
+  "sources": [
+    {
+      "repository": "https://github.com/anomalyco/opencode",
+      "tag": "v1.2.27",
+      "commit": "4ee426ba549131c4903a71dfb6259200467aca81",
+      "path": "packages/opencode/src/session/session.sql.ts",
+      "url": "https://raw.githubusercontent.com/anomalyco/opencode/4ee426ba549131c4903a71dfb6259200467aca81/packages/opencode/src/session/session.sql.ts",
+      "sha256": "f111a07ae934d2753927f8e12b76c77fa1e17ccdbfe429c6bd18dbe4b54173e7",
+      "license": "MIT",
+      "licenseUrl": "https://github.com/anomalyco/opencode/blob/4ee426ba549131c4903a71dfb6259200467aca81/LICENSE",
+      "observations": [
+        "Session rows use id, parent_id, title, directory and millisecond time_updated.",
+        "Message and todo rows reference session_id. Part rows reference message_id and session_id."
+      ]
+    }
+  ],
+  "generation": {
+    "method": "Manually generated synthetic values using only the fixed source output field names and value types. No upstream source code or user session content is copied.",
+    "privacy": "All IDs, titles, timestamps and /fixtures paths are invented. No credentials, private paths or real conversation records are included.",
+    "environment": "Format derivation only; no OpenCode binary was installed or executed.",
+    "scope": "Local discovery row decoding; tests/native-trash.test.ts separately exercises synthetic SQLite deletion and preservation. No upstream binary readback is claimed."
+  },
+  "fixtures": [
+    {
+      "file": "sessions.json",
+      "bytes": 375,
+      "sha256": "33a107df178135ab24cdfed3b2ea45a0fb7dfff299e25c491ea4427c3af911ef",
+      "scenario": "A root and its child, deliberately older first."
+    }
+  ]
+}

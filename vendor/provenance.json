@@ -1,0 +1,16 @@
+{
+  "name": "macos-trash",
+  "version": "3.0.0",
+  "repository": "https://github.com/sindresorhus/macos-trash",
+  "tag": "v3.0.0",
+  "tagObject": "83b3414c0c0fc657e75f91228c5a05ad1d1c6248",
+  "commit": "9358749ddd1bff42e2251168e35f2e11dbbb88db",
+  "archiveUrl": "https://github.com/sindresorhus/macos-trash/releases/download/v3.0.0/trash.zip",
+  "archiveSha256": "194b75a70218a256c044f5022d48711d0f16c8248e34ca02113a93b46aa1415f",
+  "archiveBytes": 280858,
+  "binarySha256": "cc802989bab3f97ce608b5b88838302dda65f1481bb8775b3c342830677bde68",
+  "binaryBytes": 726312,
+  "licenseUrl": "https://raw.githubusercontent.com/sindresorhus/macos-trash/9358749ddd1bff42e2251168e35f2e11dbbb88db/license",
+  "licenseSha256": "5c932d88256b4ab958f64a856fa48e8bd1f55bc1d96b8149c65689e0c61789d3",
+  "licenseBytes": 1117
+}

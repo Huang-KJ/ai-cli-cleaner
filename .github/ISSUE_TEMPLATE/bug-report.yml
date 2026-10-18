@@ -1,0 +1,37 @@
+name: Bug report
+description: Report a reproducible problem with redacted information or synthetic data.
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include real conversations, raw databases, secrets, full personal paths, or unredacted logs.
+        Follow SECURITY.md for vulnerabilities and restricted disclosure; real agent data is not required.
+  - type: input
+    id: versions
+    attributes:
+      label: Environment and versions
+      description: CLI, agent, macOS, Node.js, npm versions, and CPU architecture.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Include commands and synthetic fixture structure. Redact usernames, personal paths, and conversation IDs.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Expected and actual behavior
+      description: Include only minimal redacted errors; never attach real conversation content.
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I have removed private conversations, secrets, account identifiers, and unredacted logs.
+          required: true
