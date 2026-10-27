@@ -8,6 +8,7 @@ import { deleteAntigravityConversation } from "./delete-antigravity.js";
 import { deleteCodexConversations } from "./delete-codex.js";
 import { prepareOpenCodeDeletion } from "./opencode.js";
 import { prepareGrokDeletion } from "./grok.js";
+import { CLAUDE_SELECTED_REFUSAL } from "./claude.js";
 import { assertLocalConversationPathsUnchanged, assertSafeHomePaths, scanConversationPaths, snapshotConversationPaths, validateOwnedConversationPaths } from "./owned-paths.js";
 import {
   attachMetadataFailure, createMetadataInventory,
@@ -59,6 +60,7 @@ export async function deleteConversations(
     try {
       assertConversationId(conversation.id);
       if (conversation.disabledReason) throw new Error(conversation.disabledReason);
+      if (conversation.providerId === "claude") throw new Error(CLAUDE_SELECTED_REFUSAL);
       if (conversation.providerId === "antigravity") {
         await deleteAntigravityConversation(conversation, options, result);
       } else if (conversation.providerId === "codex" && conversation.deleteStrategy.kind === "local") {

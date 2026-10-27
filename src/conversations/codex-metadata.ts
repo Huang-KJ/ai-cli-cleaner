@@ -6,7 +6,10 @@ import { createMetadataPlan, type MetadataPlan, type MetadataPlanResult } from "
 import { validateCodexRolloutPath, validateExactStoragePath } from "./owned-paths.js";
 import { assertConversationId } from "./types.js";
 import { createPathWalkBudget, pathExists, readDirectoryBounded } from "../fs/paths.js";
-import { assertKnownCodexDatabases, codexMetadataFiles, getCodexMetadataPaths, type CodexMetadataPaths } from "./codex-paths.js";
+import {
+  assertKnownCodexDatabases, codexMetadataFiles, getCodexMetadataPaths, scopeCodexMetadata,
+  type CodexMetadataPaths, type CodexMemoryOptions
+} from "./codex-paths.js";
 import {
   codexDatabaseEntries, codexDatabaseSchemas, codexLocalHostSql, codexRequiredColumns,
   isLocalCodexHost, readCodexResidualIds, type CodexDatabaseSchema, type CodexTableSchema
@@ -43,12 +46,13 @@ export async function prepareCodexThreadsMetadata(
   paths: CodexMetadataPaths,
   threadIds: string[],
   trash: TrashFn,
-  rolloutPaths: string[] = []
+  rolloutPaths: string[] = [],
+  options: CodexMemoryOptions = {}
 ): Promise<CodexMetadataPlan> {
   threadIds.forEach(assertConversationId);
   await assertKnownCodexDatabases(home);
   const rollouts = await selectedRolloutPaths(home, threadIds, rolloutPaths);
-  return prepareCodexPlan(home, paths, trash, threadIds, "Selected Codex conversations", async (mapped, inventory) => {
+  return prepareCodexPlan(home, scopeCodexMetadata(paths, options), trash, threadIds, "Selected Codex conversations", async (mapped, inventory) => {
     await deleteCodexMetadataInternal(mapped, threadIds, inventory, rollouts);
   });
 }
@@ -58,14 +62,16 @@ export async function prepareLiveCodexThreadsMetadata(
   paths: CodexMetadataPaths,
   threadIds: string[],
   trash: TrashFn,
-  rolloutPaths: string[] = []
+  rolloutPaths: string[] = [],
+  options: CodexMemoryOptions = {}
 ): Promise<CodexMetadataPlan> {
   threadIds.forEach(assertConversationId);
   await assertKnownCodexDatabases(home);
   const rollouts = await selectedRolloutPaths(home, threadIds, rolloutPaths);
-  return prepareCodexPlan(home, paths, trash, threadIds, "Selected Codex conversations", async (mapped, inventory) => {
+  const scoped = scopeCodexMetadata(paths, options);
+  return prepareCodexPlan(home, scoped, trash, threadIds, "Selected Codex conversations", async (mapped, inventory) => {
     await deleteCodexMetadataInternal(mapped, threadIds, inventory, rollouts);
-  }, codexMetadataFiles(paths), true, rollouts);
+  }, codexMetadataFiles(scoped), true, rollouts);
 }
 
 async function selectedRolloutPaths(home: string, threadIds: string[], candidates: string[]): Promise<string[]> {
@@ -95,22 +101,26 @@ const codexGlobalThreadKeys = [
   "thread-writable-roots"
 ] as const;
 
-export function codexConversationMetadataPaths(home: string): string[] {
-  return withSqliteSidecars(codexMetadataFiles(getCodexMetadataPaths(home)));
+export function codexConversationMetadataPaths(home: string, options: CodexMemoryOptions = {}): string[] {
+  return withSqliteSidecars(codexMetadataFiles(getCodexMetadataPaths(home, options)));
 }
 
-export async function prepareCodexConversationMetadata(home: string, trash: TrashFn): Promise<CodexMetadataPlan> {
+export async function prepareCodexConversationMetadata(
+  home: string,
+  trash: TrashFn,
+  options: CodexMemoryOptions = {}
+): Promise<CodexMetadataPlan> {
   const root = path.join(home, ".codex");
-  const sourcePaths = getCodexMetadataPaths(home);
+  const sourcePaths = getCodexMetadataPaths(home, options);
   if (!path.isAbsolute(home)) throw new Error("Codex home must be an absolute path.");
   const rollouts = await collectCodexRollouts(home);
   const globalPaths = new Set(sourcePaths.globalStateFiles ?? []);
   const sourceInventory = await createMetadataInventory([
     ...codexMetadataFiles(sourcePaths).filter((file) => !globalPaths.has(file)),
     ...rollouts
-  ], root, home);
+  ], root, home, { allowShmBookkeeping: true });
   // 共用 residual 驗證已檢查 state/app schema，且僅開啟私有資料庫副本。
-  const residual = await readCodexResidualIds(home, sourcePaths);
+  const residual = await readCodexResidualIds(home, sourcePaths, options);
   if (residual.disabledReason) throw new Error(residual.warnings.join("\n"));
   const ids = new Set(residual.ids);
   for (const file of [sourcePaths.sessionIndex, sourcePaths.historyFile]) {
@@ -228,6 +238,7 @@ function mapCodexPaths(paths: CodexPlanPaths, copies: Map<string, string>): Code
     logsDatabase: optional(paths.logsDatabase),
     goalsDatabase: optional(paths.goalsDatabase),
     memoriesDatabase: optional(paths.memoriesDatabase),
+    memoriesV2Database: optional(paths.memoriesV2Database),
     queueDatabase: optional(paths.queueDatabase),
     appDatabase: optional(paths.appDatabase),
     threadSummariesDatabase: optional(paths.threadSummariesDatabase),
@@ -405,7 +416,7 @@ function deleteCodexTableRows(database: DatabaseSync, table: CodexTableSchema, i
   if (codexRequiredColumns(table).some((column) => !columns.has(column))) return;
   const host = table.host && columns.has(table.host) ? table.host : undefined;
   const condition = table.idColumns.map((column) => `${quote(column)} = ?`).join(" OR ");
-  const scope = host ? ` AND ${codexLocalHostSql(host)}` : "";
+  const scope = `${host ? ` AND ${codexLocalHostSql(host)}` : ""}${table.jobKind ? " AND kind = 'memory_stage1'" : ""}`;
   const statement = database.prepare(`DELETE FROM ${quote(table.name)} WHERE (${condition})${scope}`);
   for (const id of ids) statement.run(...table.idColumns.map(() => id));
 }
@@ -417,7 +428,8 @@ function selectCodexRows(schema: CodexDatabaseSchema, threadIds: string[]): Retu
     if (!table || !table.idColumns.some((column) => typeof row[column] === "string" && ids.has(row[column] as string))) {
       return false;
     }
-    return !table.host || (table.optionalHost && !(table.host in row)) || isLocalCodexHost(row[table.host]);
+    return (!table.jobKind || row.kind === table.jobKind) &&
+      (!table.host || (table.optionalHost && !(table.host in row)) || isLocalCodexHost(row[table.host]));
   };
 }
 

@@ -4,9 +4,13 @@ AI CLI Cleaner acts on local data only. It cannot delete provider-side cloud cop
 
 ## Review the scope first
 
-Full `clean` covers more than conversation text. For Codex, it can include conversations and indexes, attachments, voice records, memories, goals, queues, generated images, visualizations, logs, and execution snapshots. Other agents may have temporary work data, HTML output, caches, snapshots, or memories. Codex full cleanup also moves valid `YYYY-MM-DD` directories directly inside `~/Documents/Codex` to Trash, including project source files and all other contents. Selected-conversation deletion excludes these workspace directories. Read the actual preview and confirmation scope.
+Full `clean` covers more than conversation text. For Codex, it can include conversations and indexes, attachments, voice records, goals, queues, generated images, visualizations, logs, and execution snapshots. Other agents may have temporary work data, HTML output, caches, or snapshots. Supported memory stores are retained by default, including with `--all`; `--include-memories` explicitly includes them. Retained memories may still contain information from deleted conversations. See [memory preservation](compatibility.md#memory-preservation) for bulk and selected-deletion boundaries.
+
+Codex full cleanup also moves valid `YYYY-MM-DD` directories directly inside `~/Documents/Codex` to Trash, including project source files and all other contents, and removes that root's `.DS_Store` Finder metadata. Selected-conversation deletion excludes these workspace directories. Read the actual preview and confirmation scope.
 
 `doctor` does not read conversation content or change data. A dry run does not delete original data or stop agents. Provider SQLite data is read through private temporary copies without opening SQLite connections to the original files; SQLite may create WAL/SHM files within those copies. Temporary copies may contain private information and are moved to Trash after use. Trash retains data; it is not secure erasure.
+
+Codex bulk preflight permits read-coordination changes confined to an existing, same-sized SHM file with the same filesystem identity. Main databases, WAL contents, and rollback journals still require an unchanged snapshot, and open files still block cleanup. Private read snapshots rebuild their SHM from the copied database and WAL instead of copying the mutable source SHM. File replacement, changed links or permissions, and added or missing sidecars remain reasons to stop.
 
 Close the selected agents before deletion. `--allow-running` cannot bypass process or open-file checks and is rejected for deletion; read-only dry runs remain available while agents run. If a database or sidecar reopens during cleanup, preserve any recovery records and inspect the reported result before retrying.
 

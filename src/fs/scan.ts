@@ -1,15 +1,19 @@
 import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
-import type { CleanerManifest, ScanEntry } from "../cleaners/types.js";
+import type { CleanerManifest, PreservationGuard, ScanEntry } from "../cleaners/types.js";
 import {
   containsPath,
+  createPathWalkBudget,
   expandHome,
   getCanonicalPath,
   getPathSnapshot,
   getSQLiteBasePath,
-  resolvePattern
+  readDirectoryBounded,
+  resolvePattern,
+  SQLITE_SIDECAR_SUFFIXES
 } from "./paths.js";
+import { snapshotPreservedPath, validatePreservationGuards } from "./preservation.js";
 
 export interface ScanOptions {
   home?: string;
@@ -24,7 +28,7 @@ export async function scanManifests(
   const entries: ScanEntry[] = [];
 
   for (const manifest of manifests) {
-    const preservedPaths = manifest.preservedPaths.map((preservedPath) =>
+    const preservedPaths = [...manifest.preservedPaths, ...(manifest.memoryDeletePatterns ?? []).flatMap(memoryPreservedPaths)].map((preservedPath) =>
       expandHome(preservedPath, home)
     );
     const canonicalPreservedPaths = await Promise.all(
@@ -32,18 +36,21 @@ export async function scanManifests(
     );
 
     const patterns = [
-      ...manifest.deletePatterns.map((pattern) => ({ pattern, dated: false })),
-      ...(manifest.datedDirectoryRoots ?? []).map((pattern) => ({ pattern, dated: true }))
+      ...manifest.deletePatterns.map((pattern) => ({ pattern, dated: false, policy: undefined as string[] | undefined })),
+      ...(manifest.datedDirectoryRoots ?? []).map((pattern) => ({ pattern, dated: true, policy: undefined as string[] | undefined })),
+      ...(manifest.protectedChildRoots ?? []).map(({ root, childNames }) => ({ pattern: root, dated: false, policy: childNames }))
     ];
-    for (const { pattern, dated } of patterns) {
+    for (const { pattern, dated, policy } of patterns) {
       const entryBase = {
         providerId: manifest.id,
         providerName: manifest.name,
         pattern
       };
       let resolvedPaths: string[];
+      let preservation = new Map<string, PreservationGuard[]>();
       try {
-        resolvedPaths = dated
+        if (policy) preservation = await resolveProtectedChildren(pattern, policy, home, canonicalHome);
+        resolvedPaths = policy ? [...preservation.keys()] : dated
           ? await resolveDatedDirectories(pattern, home, canonicalHome)
           : await resolvePattern(pattern, home);
       } catch (error) {
@@ -75,6 +82,8 @@ export async function scanManifests(
           }
 
           const snapshot = await getPathSnapshot(resolvedPath);
+          const preservationGuards = preservation.get(resolvedPath);
+          if (preservationGuards) await validatePreservationGuards(preservationGuards);
           const identity = snapshot?.identity;
           if (dated && identity && identity.kind !== "directory") {
             throw new Error(`Refusing to clean a dated path that is not a directory: ${resolvedPath}`);
@@ -87,6 +96,7 @@ export async function scanManifests(
             path: resolvedPath,
             exists,
             sizeBytes,
+            preservationGuards,
             identity: identity
               ? { ...identity, canonicalPath: canonicalResolvedPath }
               : undefined
@@ -107,6 +117,71 @@ export async function scanManifests(
   annotateSQLiteGroups(entries);
 
   return entries;
+}
+
+function memoryPreservedPaths(pattern: string): string[] {
+  if (!pattern.includes("*")) return [pattern];
+  const base = pattern.endsWith("*") ? pattern.slice(0, -1) : "";
+  if (!base || getSQLiteBasePath(base) !== base) throw new Error("Unsupported memory preservation pattern.");
+  return [base, ...SQLITE_SIDECAR_SUFFIXES.map((suffix) => `${base}${suffix}`)];
+}
+
+async function resolveProtectedChildren(
+  root: string,
+  names: string[],
+  home: string,
+  canonicalHome: string
+): Promise<Map<string, PreservationGuard[]>> {
+  if (!names.length || names.some((name) => !name || name === "." || name === ".." || /[/\\\x00]/.test(name))) {
+    throw new Error("Invalid protected child name.");
+  }
+  const expanded = expandHome(root, home);
+  const result = new Map<string, PreservationGuard[]>();
+  const physicalDirectory = async (directory: string, optional = false): Promise<PreservationGuard | undefined> => {
+    const guard = await snapshotPreservedPath(directory);
+    if (!path.isAbsolute(directory) || !containsPath(home, directory) ||
+        !containsPath(canonicalHome, guard.canonicalPath) ||
+        guard.canonicalPath !== path.join(canonicalHome, path.relative(home, directory))) {
+      throw new Error(`Refusing to clean a redirected protected storage path: ${directory}`);
+    }
+    if (!guard.identity && optional) return undefined;
+    if (guard.identity?.kind !== "directory") throw new Error(`Protected storage path is not a physical directory: ${directory}`);
+    return guard;
+  };
+  const rootGuard = await physicalDirectory(expanded, true);
+  if (!rootGuard) return result;
+  const parentGuard = await physicalDirectory(path.dirname(expanded));
+  const rootGuards = [parentGuard!, rootGuard];
+  const budget = createPathWalkBudget();
+  for await (const project of readDirectoryBounded(expanded, budget)) {
+    const projectPath = path.join(expanded, project.name);
+    if (project.isSymbolicLink()) throw new Error(`Protected project storage is a symbolic link: ${projectPath}`);
+    if (!project.isDirectory()) {
+      result.set(projectPath, rootGuards);
+      continue;
+    }
+    const projectGuard = await physicalDirectory(projectPath);
+    const memoryGuards: PreservationGuard[] = [];
+    for (const name of names) {
+      const file = path.join(projectPath, name);
+      const guard = await snapshotPreservedPath(file);
+      if (guard.canonicalPath !== path.join(canonicalHome, path.relative(home, file)) ||
+          (guard.identity && guard.identity.kind !== "directory")) {
+        throw new Error(`Preserved memory is not a physical directory: ${file}`);
+      }
+      memoryGuards.push(guard);
+    }
+    const guards = [...rootGuards, projectGuard!, ...memoryGuards];
+    for await (const child of readDirectoryBounded(projectPath, budget, 1)) {
+      if (names.includes(child.name)) continue;
+      const candidate = path.join(projectPath, child.name);
+      if (child.isSymbolicLink()) throw new Error(`Protected project data is a symbolic link: ${candidate}`);
+      result.set(candidate, guards);
+    }
+    await validatePreservationGuards(guards);
+  }
+  await validatePreservationGuards(rootGuards);
+  return new Map([...result].sort(([first], [second]) => first.localeCompare(second)));
 }
 
 async function resolveDatedDirectories(root: string, home: string, canonicalHome: string): Promise<string[]> {

@@ -33,6 +33,19 @@ const closed = async () => ({ supported: true, openPaths: [] as string[] });
 const planFor = (targets: ProviderId[]) => prepareClean(targets, { home, trash, checkOpenPaths: closed });
 
 describe("all-conversation deletion", () => {
+  it("clears dated Codex workspaces and Finder metadata while retaining the workspace root", async () => {
+    await write("Documents/Codex/2026-10-23/project/output.txt", "synthetic output");
+    await write("Documents/Codex/2026-10-24/results.txt", "synthetic results");
+    await write("Documents/Codex/.DS_Store", "synthetic Finder metadata");
+    const root = path.join(home, "Documents/Codex");
+    const result = await (await planFor(["codex"])).execute();
+
+    expect(result.failures).toEqual([]);
+    expect(result.deleted).toHaveLength(3);
+    expect((await fs.stat(root)).isDirectory()).toBe(true);
+    expect(await fs.readdir(root)).toEqual([]);
+  });
+
   it("previews and clears dated Codex workspaces without requiring a .codex directory", async () => {
     const current = await write("Documents/Codex/2026-10-15/project/output.txt", "current workspace");
     const leap = await write("Documents/Codex/2024-02-29/results.txt", "leap workspace");

@@ -128,7 +128,7 @@ describe("bulk cleanup CLI", () => {
     test.dependencies.confirm = vi.fn(async () => { events.push("confirm"); return true; });
     test.plan.execute = vi.fn(async () => { events.push("execute"); return { deleted: test.plan.entries, failures: [] }; });
     expect(await command(["clean", "--target", "codex,copilot,codex"], test.dependencies)).toBe(0);
-    expect(test.dependencies.prepareClean).toHaveBeenCalledExactlyOnceWith(["codex", "copilot"]);
+    expect(test.dependencies.prepareClean).toHaveBeenCalledExactlyOnceWith(["codex", "copilot"], { includeMemories: false });
     expect(events).toEqual(["prepare", "confirm", "execute"]);
     expect(test.logs.join("\n")).toContain("Moved to Trash: 1");
   });
@@ -136,10 +136,37 @@ describe("bulk cleanup CLI", () => {
   it("selects every supported agent with --all and allows explicit --yes", async () => {
     const test = stoppableCleanFixture();
     expect(await command(["clean", "--all", "--yes", "--force-stop"], test.dependencies)).toBe(0);
-    expect(test.dependencies.prepareClean).toHaveBeenCalledExactlyOnceWith(manifests.map((manifest) => manifest.id));
+    expect(test.dependencies.prepareClean).toHaveBeenCalledExactlyOnceWith(manifests.map((manifest) => manifest.id), { includeMemories: false });
     expect(test.dependencies.stopAgents).toHaveBeenCalledExactlyOnceWith(manifests.map((manifest) => manifest.id));
     expect(test.dependencies.confirm).not.toHaveBeenCalled();
     expect(test.plan.execute).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { flags: ["--all"], included: false },
+    { flags: ["--target", "codex,claude,grok"], included: false },
+    { flags: ["--all", "--include-memories"], included: true },
+    { flags: ["--target", "codex", "--include-memories"], included: true }
+  ])("forwards the explicit memory policy during read-only preview: $flags", async ({ flags, included }) => {
+    const test = cleanFixture();
+    expect(await command(["clean", ...flags, "--dry-run", "--verbose"], test.dependencies)).toBe(0);
+    expect(test.dependencies.prepareClean).toHaveBeenCalledWith(expect.any(Array), { includeMemories: included });
+    expect(test.logs.join("\n")).toContain(included ? "Memories: included." : "Memories: kept");
+    const scope = test.logs.find((line) => line.startsWith("Cleanup scope:"))!;
+    expect(scope.includes("memories")).toBe(included);
+    expect(test.dependencies.confirm).not.toHaveBeenCalled();
+    expect(test.plan.execute).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])("discloses memory handling in cleanup confirmation (included=%s)", async (included) => {
+    const test = cleanFixture();
+    const prompts: string[] = [];
+    test.dependencies.confirm = vi.fn(async ({ message }) => { prompts.push(message); return false; });
+    expect(await command(["clean", "--all", ...(included ? ["--include-memories"] : [])], test.dependencies)).toBe(0);
+    expect(prompts).toEqual([included
+      ? "Move selected history, related data, and memories to Trash?"
+      : "Move selected history and related data to Trash? Memories will be kept."]);
+    expect(test.plan.execute).not.toHaveBeenCalled();
   });
 
   it("confirms stopping the selected agents before preparing the deletion plan", async () => {
@@ -175,9 +202,9 @@ describe("bulk cleanup CLI", () => {
     expect(test.errors).toEqual(["無法停止代理"]);
   });
 
-  it("dry-run shows the complete plan without confirmation or execution", async () => {
+  it("verbose dry-run shows the complete plan without confirmation or execution", async () => {
     const test = cleanFixture();
-    expect(await command(["clean", "--target", "copilot", "--dry-run", "--yes", "--force-stop"], test.dependencies)).toBe(0);
+    expect(await command(["clean", "--target", "copilot", "--dry-run", "--verbose", "--yes", "--force-stop"], test.dependencies)).toBe(0);
     expect(test.dependencies.prepareClean).toHaveBeenCalledOnce();
     expect(test.dependencies.stopAgents).not.toHaveBeenCalled();
     expect(test.dependencies.confirm).not.toHaveBeenCalled();
@@ -185,6 +212,34 @@ describe("bulk cleanup CLI", () => {
     expect(test.logs.join("\n")).toContain(test.plan.entries[0]!.path);
     expect(test.logs.join("\n")).toContain(test.plan.operations[0]);
     expect(test.logs.join("\n")).toContain("No original data was deleted");
+  });
+
+  it("summarizes large cleanup plans by default and explains how to view details", async () => {
+    const test = cleanFixture();
+    test.plan.entries = Array.from({ length: 100 }, (_, index) => ({
+      ...test.plan.entries[0]!, path: `/fixture/private-${index}`, sizeBytes: 10
+    }));
+    test.plan.operations = ["private-index-update"];
+    expect(await command(["clean", "--all", "--dry-run"], test.dependencies)).toBe(0);
+    expect(test.logs.join("\n")).toContain("Cleanup: 100 items (1 kB), 1 index updates.");
+    expect(test.logs.join("\n")).toContain("--verbose");
+    expect(test.logs.join("\n")).not.toContain("/fixture/");
+    expect(test.logs.join("\n")).not.toContain("private-index-update");
+    expect(test.logs.join("\n")).not.toContain("Cleanup scope:");
+    expect(test.logs.length).toBeLessThanOrEqual(6);
+    expect(test.plan.execute).not.toHaveBeenCalled();
+  });
+
+  it("keeps stop and cleanup prompts short without dropping the desktop shutdown impact", async () => {
+    const test = stoppableCleanFixture();
+    const messages: string[] = [];
+    test.dependencies.confirm = vi.fn(async ({ message }) => { messages.push(message); return true; });
+    expect(await command(["clean", "--all", "--force-stop"], test.dependencies)).toBe(0);
+    expect(messages).toHaveLength(2);
+    expect(messages[0]).toContain("Interrupts current work");
+    expect(messages[0]).toContain("ChatGPT/Codex and Claude desktop apps");
+    for (const message of messages) expect(message.length).toBeLessThan(120);
+    expect(test.logs.join("\n")).toContain(`Agents: ${manifests.map((manifest) => manifest.id).join(", ")}`);
   });
 
   it("cancellation preserves the prepared data", async () => {
@@ -264,6 +319,19 @@ describe("bulk cleanup CLI", () => {
 });
 
 describe("selected-conversation agent shutdown", () => {
+  it.each([false, true])("uses the same memory policy for discovery and selected deletion (included=%s)", async (included) => {
+    const test = fixture();
+    test.dependencies.discoverConversations = vi.fn(async () => ({ conversations: [test.conversation], warnings: [] }));
+    test.dependencies.checkbox = vi.fn(async () => [test.conversation.key]);
+    test.dependencies.deleteConversations = vi.fn(async () => ({ deleted: [test.conversation], previewed: [], failures: [] }));
+    const prompts: string[] = [];
+    test.dependencies.confirm = vi.fn(async ({ message }) => { prompts.push(message); return true; });
+    expect(await command(["conversations", "--target", "codex", ...(included ? ["--include-memories"] : [])], test.dependencies)).toBe(0);
+    expect(test.dependencies.discoverConversations).toHaveBeenCalledExactlyOnceWith(["codex"], { includeMemories: included });
+    expect(test.dependencies.deleteConversations).toHaveBeenCalledExactlyOnceWith([test.conversation], { dryRun: false, includeMemories: included });
+    expect(prompts[0]).toContain(included ? "Include supported memory records." : "Keep memories.");
+  });
+
   it("stops only the selected agent after the deletion prompt explains the stop", async () => {
     const test = fixture();
     const events: string[] = [];
@@ -296,7 +364,7 @@ describe("selected-conversation agent shutdown", () => {
     expect(await command(["conversations", "--target", "codex", "--force-stop", "--dry-run"], test.dependencies)).toBe(0);
     expect(test.dependencies.stopAgents).not.toHaveBeenCalled();
     expect(test.dependencies.confirm).not.toHaveBeenCalled();
-    expect(test.dependencies.deleteConversations).toHaveBeenCalledExactlyOnceWith([test.conversation], { dryRun: true });
+    expect(test.dependencies.deleteConversations).toHaveBeenCalledExactlyOnceWith([test.conversation], { dryRun: true, includeMemories: false });
   });
 
   it("does not stop agents when deletion is cancelled or nothing is selected", async () => {
@@ -353,19 +421,27 @@ describe("public beta CLI guards", () => {
     expect(await command(["clean", "--target", "codex", "--dry-run", "--force-stop"], test.deps)).toBe(0);
     expect(test.events).toEqual(["prepare"]);
   });
-  it("explains the Codex auxiliary data scope in preview and confirmation", async () => {
+  it("shows full Codex scope only with verbose output", async () => {
     const test = publicCliFixture();
-    let confirmation = "";
-    test.deps.confirm = async (options) => { confirmation = options.message; return false; };
-    expect(await command(["clean", "--target", "codex"], test.deps)).toBe(0);
+    expect(await command(["clean", "--target", "codex", "--dry-run", "-v"], test.deps)).toBe(0);
     const output = test.output.join("\n");
     for (const name of ["memories", "goals", "queue", "generated_images", "visualizations"]) expect(output).toContain(name);
-    for (const message of [output, confirmation]) {
-      expect(message).toContain("~/Documents/Codex");
-      expect(message).toContain("YYYY-MM-DD workspace folders");
-      expect(message).toContain("all contained files");
-      expect(message).toContain("generated and project files");
-    }
+    expect(output).toContain("~/Documents/Codex");
+    expect(output).toContain("YYYY-MM-DD workspace folders");
+    expect(output).toContain("all contained files");
+    expect(output).toContain("generated and project files");
+  });
+  it.each([{ flags: [] }, { flags: ["--dry-run"] }, { flags: ["--yes"] }])("always discloses dated workspace contents before cleanup: $flags", async ({ flags }) => {
+    const test = cleanFixture();
+    test.plan.entries = [{ providerId: "codex", providerName: "Codex", pattern: "~/Documents/Codex",
+      path: "/fixture/Documents/Codex/2026-10-25", exists: true, sizeBytes: 1 }];
+    test.dependencies.confirm = async () => {
+      expect(test.warnings.join("\n")).toContain("all files inside, including project files");
+      return true;
+    };
+    expect(await command(["clean", "--target", "codex", ...flags], test.dependencies)).toBe(0);
+    expect(test.warnings.join("\n")).toContain("~/Documents/Codex/YYYY-MM-DD");
+    expect(test.warnings.join("\n")).toContain("all files inside, including project files");
   });
   it("selected conversations require an offline guard by default", async () => {
     const test = publicCliFixture();

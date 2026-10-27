@@ -67,6 +67,7 @@ export interface ConversationDeleteResult {
 
 export interface DeleteConversationOptions {
   dryRun?: boolean;
+  includeMemories?: boolean;
   home?: string;
   checkOpenPaths: OpenFileCheckFn;
   trash: TrashFn;

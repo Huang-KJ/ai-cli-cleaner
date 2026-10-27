@@ -14,6 +14,75 @@ afterEach(async () => {
 });
 
 describe("Codex artifact ownership", () => {
+  it.each(["memories_1.sqlite", "memories_v2_1.sqlite"])(
+    "refuses a dotted ID known only through preserved %s without changing memory bytes", async (name) => {
+      const item = await makeHome(["alpha"]);
+      const file = path.join(item.root, name);
+      const database = new DatabaseSync(file);
+      database.exec("CREATE TABLE stage1_outputs(thread_id TEXT PRIMARY KEY, raw_memory TEXT); INSERT INTO stage1_outputs VALUES('alpha.beta', 'synthetic memory-only ID')");
+      database.close();
+      const original = await fs.readFile(file);
+      const markdown = path.join(item.root, "memories", "MEMORY.md");
+      await fs.mkdir(path.dirname(markdown));
+      await fs.writeFile(markdown, "合成保留記憶\n");
+      const snapshot = path.join(item.root, "shell_snapshots", "alpha.beta");
+      await fs.mkdir(path.dirname(snapshot));
+      await fs.writeFile(snapshot, "synthetic shared snapshot\n");
+      const discovery = await discoverConversations(["codex"], { home: item.home });
+      expect(discovery.conversations.map((conversation) => conversation.id)).toEqual(["alpha"]);
+      const selected = discovery.conversations[0]!;
+      expect(selected.disabledReason).toMatch(/ambiguous|multiple|ownership/i);
+      const calls: string[][] = [];
+      for (const dryRun of [false, true]) {
+        const result = await deleteConversations([{ ...selected, disabledReason: undefined }], {
+          home: item.home, dryRun, checkOpenPaths: closed, trash: movingTrash(item.home, calls)
+        });
+        expect(result.deleted).toEqual([]);
+        expect(result.previewed).toEqual([]);
+        expect(result.failures).toHaveLength(1);
+      }
+      expect(calls).toEqual([]);
+      expect(await fs.readFile(file)).toEqual(original);
+      expect(await fs.readFile(markdown, "utf8")).toBe("合成保留記憶\n");
+      expect(await fs.readFile(snapshot, "utf8")).toBe("synthetic shared snapshot\n");
+      await expect(fs.lstat(path.join(item.home, ".ai-cli-cleaner"))).rejects.toMatchObject({ code: "ENOENT" });
+    }
+  );
+
+  it("deletes a unique direct artifact while preserving memory bytes and excluding them from recovery backups", async () => {
+    const item = await makeHome(["alpha"]);
+    const file = path.join(item.root, "memories_v2_1.sqlite");
+    const database = new DatabaseSync(file);
+    database.exec(`CREATE TABLE stage1_outputs(thread_id TEXT PRIMARY KEY, raw_memory TEXT);
+      INSERT INTO stage1_outputs VALUES('alpha', 'synthetic selected memory'), ('memory-only', 'synthetic retained memory')`);
+    database.close();
+    const original = await fs.readFile(file);
+    const markdown = path.join(item.root, "memories", "MEMORY.md");
+    await fs.mkdir(path.dirname(markdown));
+    await fs.writeFile(markdown, "合成保留記憶\n");
+    const snapshot = path.join(item.root, "shell_snapshots", "alpha.snapshot");
+    await fs.mkdir(path.dirname(snapshot));
+    await fs.writeFile(snapshot, "synthetic unique snapshot\n");
+    const discovery = await discoverConversations(["codex"], { home: item.home });
+    expect(discovery.conversations.map((conversation) => conversation.id)).toEqual(["alpha"]);
+    const selected = discovery.conversations[0]!;
+    expect(selected.disabledReason).toBeUndefined();
+    const calls: string[][] = [];
+    const result = await deleteConversations([selected], {
+      home: item.home, checkOpenPaths: closed, trash: movingTrash(item.home, calls)
+    });
+    expect(result.failures).toEqual([]);
+    expect(result.deleted).toEqual([selected]);
+    expect(await fs.readFile(file)).toEqual(original);
+    expect(await fs.readFile(markdown, "utf8")).toBe("合成保留記憶\n");
+    await expect(fs.lstat(snapshot)).rejects.toMatchObject({ code: "ENOENT" });
+    const backups = calls.flat().flatMap((source, index) => source.includes("/recovery/")
+      ? [path.join(item.home, "fixture-trash", String(index), "manifest.json")] : []);
+    expect(backups).toHaveLength(1);
+    const manifest = JSON.parse(await fs.readFile(backups[0]!, "utf8")) as { files: Array<{ originalPath: string }> };
+    expect(manifest.files.some((entry) => entry.originalPath.includes("/.codex/memories"))).toBe(false);
+  });
+
   it("disables both IDs when dotted snapshot names match a short and exact ID", async () => {
     const item = await collisionFixture();
     const discovery = await discoverConversations(["codex"], { home: item.home });

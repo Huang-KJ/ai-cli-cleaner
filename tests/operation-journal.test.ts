@@ -21,6 +21,22 @@ const operation = (home: string) => ({ home, kind: "conversations" as const, tar
 
 // 若搬移未先持久保存意圖、錯誤被寫成成功或備份驗證放寬，這些案例會失敗。
 describe("durable operation journal", () => {
+  it("records Claude cleanup and retains its recovery inspection", async () => {
+    const home = await fixture();
+    const file = path.join(home, "history.jsonl");
+    await fs.writeFile(file, "synthetic Claude history");
+    await withOperation({ home, kind: "clean", target: ["claude"] }, async () => {
+      await wrapOperationTrash(async (paths) => {
+        await fs.rename(paths[0]!, path.join(home, "trash-result"));
+      })([file]);
+    });
+    const [summary] = await listOperations(home);
+    expect(summary!.target).toEqual(["claude"]);
+    expect(summary!.status).toBe("succeeded");
+    const inspected = await inspectOperation(summary!.id, home);
+    expect(inspected.operation.movedPaths).toEqual([file]);
+  });
+
   it("persists private intent before a helper and records observed movement", async () => {
     const home = await fixture();
     const file = path.join(home, "conversation.jsonl");

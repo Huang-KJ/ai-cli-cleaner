@@ -31,11 +31,11 @@ export interface CliDependencies {
   stopAgents?: (targets: ProviderId[]) => Promise<void>;
   checkForUpdate?: (options: { currentVersion: string; prerelease: boolean }) => Promise<UpdateResult>;
   installUpdate?: (release: UpdateResult) => Promise<void>;
-  prepareClean: (targets: ProviderId[]) => Promise<CleanPlan>;
-  discoverConversations: (targets: ProviderId[]) => Promise<ConversationDiscovery>;
+  prepareClean: (targets: ProviderId[], options: { includeMemories: boolean }) => Promise<CleanPlan>;
+  discoverConversations: (targets: ProviderId[], options: { includeMemories: boolean }) => Promise<ConversationDiscovery>;
   deleteConversations: (
     conversations: ConversationRecord[],
-    options: { dryRun: boolean }
+    options: { dryRun: boolean; includeMemories: boolean }
   ) => Promise<ConversationDeleteResult>;
   log: (message: string) => void;
   warn: (message: string) => void;
@@ -78,13 +78,15 @@ export async function runCli(
     .version(version);
 
   program.command("clean")
-    .description("Move all conversations, indexes, and related agent data to Trash.")
-    .option("--all", "Clean up every supported agent.")
+    .description("Move conversations and related data to Trash; keep memories by default.")
+    .option("--all", "Clean up every supported agent; keep memories unless explicitly included.")
     .option("-t, --target <targets>", targetHelp())
     .option("--dry-run", "Preview the cleanup plan without deleting original data.", false)
-    .option("--force-stop", "Stop selected agents first; Codex may close the ChatGPT/Codex desktop app.", false)
+    .option("--include-memories", "Also move supported memory stores to Trash.", false)
+    .option("-v, --verbose", "Show the full cleanup scope, paths, and index updates.", false)
+    .option("--force-stop", "Stop selected agents first; may close their desktop apps.", false)
     .option("-y, --yes", "Skip stop-agent and cleanup confirmation prompts.", false)
-    .action(async (options: { all?: boolean; target?: string; dryRun: boolean; forceStop: boolean; yes: boolean }) => {
+    .action(async (options: { all?: boolean; target?: string; dryRun: boolean; includeMemories: boolean; verbose: boolean; forceStop: boolean; yes: boolean }) => {
       await assertPlatform();
       if (options.all && options.target !== undefined) throw new Error("Use either --all or --target, not both.");
       if (!options.all && options.target === undefined) throw new Error("Specify --all or --target to choose what to clean up.");
@@ -92,43 +94,56 @@ export async function runCli(
       if (!options.dryRun && !options.yes) {
         requireTerminal("Cleanup confirmation requires an interactive terminal. Use --dry-run to preview, or --yes to explicitly authorize non-interactive cleanup.");
       }
+      dependencies.log(`Agents: ${targets.join(", ")}`);
+      dependencies.log(memoryNotice(options.includeMemories));
+      if (!options.verbose) dependencies.log("Details: add --verbose; use --dry-run to preview.");
       if (options.forceStop && !options.dryRun) {
         if (!dependencies.stopAgents) throw new Error("Stopping agents is not available in this environment.");
         if (!options.yes && !await dependencies.confirm({
-          message: `Stop all running agents for ${targets.map(providerName).join(", ")}?${stopImpact(targets)}`
+          message: `Stop selected agents?${stopImpact(targets)}`
         })) {
           dependencies.log("Agent shutdown cancelled; cleanup has not started.");
           return;
         }
-        dependencies.log(`Stopping running agents for ${targets.map(providerName).join(", ")}…`);
+        dependencies.log("Stopping agents…");
         await dependencies.stopAgents(targets);
       } else if (options.forceStop) {
         dependencies.log("Dry-run does not stop running agents.");
       }
       if (!options.dryRun) await dependencies.assertAgentsStopped?.(targets);
-      dependencies.log(`Cleanup scope: ${cleanScope(targets)}`);
-      dependencies.log("Checking conversation data and indexes…");
-      const plan = await dependencies.prepareClean(targets);
-      for (const entry of plan.entries.filter((entry) => entry.exists)) {
-        dependencies.log(`[${displayText(entry.providerName)}] ${displayText(entry.path)} (${prettyBytes(entry.sizeBytes)})`);
-      }
-      for (const operation of plan.operations) dependencies.log(`Index updates: ${displayText(operation)}`);
-      if (!plan.entries.some((entry) => entry.exists) && plan.operations.length === 0) {
+      if (options.verbose) dependencies.log(`Cleanup scope: ${cleanScope(targets, options.includeMemories)}`);
+      dependencies.log("Checking cleanup data…");
+      const plan = await dependencies.prepareClean(targets, { includeMemories: options.includeMemories });
+      const entries = plan.entries.filter((entry) => entry.exists);
+      if (!entries.length && plan.operations.length === 0) {
         dependencies.log("No conversation data to clean up.");
         return;
+      }
+      const bytes = entries.reduce((total, entry) => total + entry.sizeBytes, 0);
+      dependencies.log(`Cleanup: ${entries.length} items (${prettyBytes(bytes)}), ${plan.operations.length} index updates.`);
+      if (entries.some((entry) => entry.providerId === "codex" && entry.pattern === "~/Documents/Codex")) {
+        dependencies.warn("Includes ~/Documents/Codex/YYYY-MM-DD folders and all files inside, including project files.");
+      }
+      if (options.verbose) {
+        for (const entry of entries) {
+          dependencies.log(`[${displayText(entry.providerName)}] ${displayText(entry.path)} (${prettyBytes(entry.sizeBytes)})`);
+        }
+        for (const operation of plan.operations) dependencies.log(`Index updates: ${displayText(operation)}`);
       }
       if (options.dryRun) {
         dependencies.log("Preview complete. No original data was deleted.");
         return;
       }
       if (!options.yes && !await dependencies.confirm({
-        message: `Clean up all local conversations and related data for ${targets.map(providerName).join(", ")}? Scope: ${cleanScope(targets)}`
+        message: options.includeMemories
+          ? "Move selected history, related data, and memories to Trash?"
+          : "Move selected history and related data to Trash? Memories will be kept."
       })) {
         dependencies.log("Deletion cancelled.");
         return;
       }
       await dependencies.assertAgentsStopped?.(targets);
-      dependencies.log("Moving conversation data to Trash and updating indexes…");
+      dependencies.log("Cleaning…");
       const result = await plan.execute();
       dependencies.log(`Moved to Trash: ${result.deleted.length} items; failed: ${result.failures.length}.`);
       for (const failure of result.failures) {
@@ -142,10 +157,11 @@ export async function runCli(
     .description("Choose an agent and select conversations to delete.")
     .option("-t, --target <target>", `One agent: ${manifests.map((manifest) => manifest.id).join(", ")}`)
     .option("--dry-run", "Preview selected conversations without deleting original data.", false)
+    .option("--include-memories", "Also delete supported memory records belonging to selected conversations.", false)
     .option("--allow-running", "Deprecated: deletion requires stopped agents; accepted only with --dry-run.", false)
     .option("--timezone <zone>", "IANA time zone for timestamps, such as UTC; defaults to the system time zone.")
-    .option("--force-stop", "Stop selected agents before deletion; Codex may close the ChatGPT/Codex desktop app.", false)
-    .action(async (options: { target?: string; dryRun: boolean; forceStop: boolean; allowRunning: boolean; timezone?: string }) => {
+    .option("--force-stop", "Stop selected agents before deletion; may close their desktop apps.", false)
+    .action(async (options: { target?: string; dryRun: boolean; includeMemories: boolean; forceStop: boolean; allowRunning: boolean; timezone?: string }) => {
       await assertPlatform();
       if (options.allowRunning && !options.dryRun) {
         throw new Error("--allow-running no longer permits deletion. Close the selected agents, then retry without --allow-running; use --force-stop to request confirmed shutdown.");
@@ -161,8 +177,9 @@ export async function runCli(
           choices: manifests.map((manifest) => ({ name: manifest.name, value: manifest.id }))
         });
         if (!target) return;
+        dependencies.log(memoryNotice(options.includeMemories, true));
         if (!options.dryRun && !options.forceStop) await dependencies.assertAgentsStopped?.([target]);
-        const discovery = await dependencies.discoverConversations([target]);
+        const discovery = await dependencies.discoverConversations([target], { includeMemories: options.includeMemories });
         for (const warning of discovery.warnings) dependencies.warn(`Warning: ${displayText(warning)}`);
         if (discovery.conversations.some((conversation) => conversation.providerId !== target)) {
           throw new Error("Discovery returned data from another agent. Operation stopped.");
@@ -199,6 +216,7 @@ export async function runCli(
           message: (options.forceStop
             ? `Stop all running ${providerName(target)} agents and delete ${selected.length} conversations and their indexes?${stopImpact([target])}`
             : `Delete ${selected.length} ${providerName(target)} conversations and their indexes?`)
+            + (options.includeMemories ? " Include supported memory records." : " Keep memories.")
             + selected.map((conversation) => `\nID: ${displayText(conversation.id)} | Key: ${displayText(conversation.key)}`).join("")
         })) {
           dependencies.log("Deletion cancelled.");
@@ -213,7 +231,9 @@ export async function runCli(
         }
         if (!options.dryRun) await dependencies.assertAgentsStopped?.([target]);
         dependencies.log(options.dryRun ? "Checking selected conversations…" : "Deleting selected conversations…");
-        const result = await dependencies.deleteConversations(selected, { dryRun: options.dryRun });
+        const result = await dependencies.deleteConversations(selected, {
+          dryRun: options.dryRun, includeMemories: options.includeMemories
+        });
         writeConversationResult(result, options.dryRun, dependencies.log, dependencies.error);
         if (result.failures.length > 0) exitCode = 1;
       } while (!fixedTarget);
@@ -311,8 +331,9 @@ function targetHelp(): string {
 }
 
 function stopImpact(targets: ProviderId[]): string {
-  const desktopApp = targets.includes("codex") ? ", and may close the ChatGPT/Codex desktop app" : "";
-  return ` This interrupts current work${desktopApp}.`;
+  const apps = [targets.includes("codex") ? "ChatGPT/Codex" : "", targets.includes("claude") ? "Claude" : ""].filter(Boolean);
+  const desktopApp = apps.length ? `; may close the ${apps.join(" and ")} desktop app${apps.length > 1 ? "s" : ""}` : "";
+  return ` Interrupts current work${desktopApp}.`;
 }
 
 function formatConversationChoice(conversation: ConversationRecord, timezone: string): string {
@@ -348,13 +369,20 @@ function validateTimezone(value?: string): string {
   }
 }
 
-function cleanScope(targets: ProviderId[]): string {
+function memoryNotice(includeMemories: boolean, selected = false): string {
+  return includeMemories
+    ? `Memories: included${selected ? " where individually supported" : ""}.`
+    : "Memories: kept (use --include-memories to include).";
+}
+
+function cleanScope(targets: ProviderId[], includeMemories: boolean): string {
   const scopes: Record<ProviderId, string> = {
-    codex: "Codex: conversations, indexes, attachments, voice records, memories, goals, queue, generated_images, visualizations, logs, execution snapshots, and valid YYYY-MM-DD workspace folders in ~/Documents/Codex with all contained files (including generated and project files)",
+    codex: `Codex: conversations, indexes, attachments, voice records, ${includeMemories ? "memories, " : ""}goals, queue, generated_images, visualizations, logs, execution snapshots, ~/Documents/Codex/.DS_Store, and valid YYYY-MM-DD workspace folders in ~/Documents/Codex with all contained files (including generated and project files)`,
     copilot: "Copilot: conversation state, indexes, and command history",
     antigravity: "Antigravity: conversations, indexes, brain, working files, generated HTML, and caches",
     opencode: "OpenCode: conversation databases, storage, project snapshots, and prompt history",
-    grok: "Grok: conversations, memories, and the active conversation index"
+    grok: `Grok: conversations, ${includeMemories ? "memories, " : ""}and the active conversation index`,
+    claude: `Claude Code: conversations, prompt history, ${includeMemories ? "project and subagent memories, " : ""}file snapshots, plans, tasks, attachments, session state, shell snapshots, logs, and usage/feedback data`
   };
   return targets.map((target) => scopes[target]).join("; ");
 }

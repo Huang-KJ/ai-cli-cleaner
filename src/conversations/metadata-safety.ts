@@ -36,6 +36,8 @@ export interface MetadataInventory {
   canonicalProviderRoot: string;
   entries: MetadataEntry[];
   liveSqlite?: boolean;
+  // 僅供唯讀快照與整庫搬移來源使用，原檔重寫維持完整比對。
+  allowShmBookkeeping?: boolean;
   privateCopies?: boolean;
   sqliteRecoveryGuards?: Map<string, SqliteRecoveryGuard>;
 }
@@ -91,7 +93,7 @@ export async function createMetadataInventory(
   paths: string[],
   providerRoot: string,
   trustedRoot: string,
-  options: { liveSqlite?: boolean } = {}
+  options: { liveSqlite?: boolean; allowShmBookkeeping?: boolean } = {}
 ): Promise<MetadataInventory> {
   if (!path.isAbsolute(providerRoot) || !path.isAbsolute(trustedRoot)) {
     throw new Error(`Metadata provider and trusted roots must be absolute paths: ${providerRoot}`);
@@ -171,7 +173,8 @@ export async function createMetadataInventory(
     providerRoot: normalizedRoot,
     canonicalProviderRoot,
     entries,
-    liveSqlite: options.liveSqlite
+    liveSqlite: options.liveSqlite,
+    allowShmBookkeeping: options.allowShmBookkeeping
   };
 }
 
@@ -264,6 +267,8 @@ async function copyMetadataInventory(
   }
   for (const entry of inventory.entries) {
     if (!entry.identity) continue;
+    // WAL-index 可由私有 DB 與 WAL 重建，不複製會被唯讀連線更新的鎖定狀態。
+    if (canRebuildShm(inventory, entry)) continue;
     const source = sources?.get(entry.path) ?? entry.path;
     const input = await fs.open(source, constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
@@ -367,7 +372,7 @@ export async function withPrivateReadDatabase<T>(
   const root = path.resolve(trusted, path.relative(path.resolve(home), path.resolve(providerRoot)));
   const target = containsPath(path.resolve(providerRoot), path.resolve(file))
     ? path.resolve(root, path.relative(providerRoot, file)) : path.resolve(file);
-  const inventory = await createMetadataInventory([target], root, trusted);
+  const inventory = await createMetadataInventory([target], root, trusted, { allowShmBookkeeping: true });
   let result!: T;
   await rehearseMetadata(inventory, async (copies) => {
     const database = new DatabaseSync(copies.get(target)!, { readOnly: true });
@@ -583,6 +588,16 @@ async function assertEntryUnchanged(
     }
     return;
   }
+  // 僅容許相同 SHM 物件的 bookkeeping 內容與 mtime 漂移；DB、WAL 與 journal 仍完整比對。
+  if (canRebuildShm(inventory, entry)) {
+    if (!entry.identity && !stat) return;
+    if (!entry.identity || !stat || stat.isSymbolicLink() || !stat.isFile() ||
+      stat.dev !== entry.identity.device || stat.ino !== entry.identity.inode ||
+      stat.size !== entry.identity.sizeBytes || stat.mode !== entry.identity.mode) {
+      throw new Error(`SQLite SHM identity changed after preflight; rescan: ${entry.path}`);
+    }
+    return;
+  }
   // 唯讀連線可重建 SHM，但仍拒絕符號連結與非一般檔案。
   if ((inventory.liveSqlite || inventory.privateCopies) && sqliteSharedMemory.test(entry.path)) {
     if (stat && (stat.isSymbolicLink() || !stat.isFile())) {
@@ -608,6 +623,11 @@ async function assertEntryUnchanged(
       throw new Error(`Metadata contents changed after preflight; rescan: ${entry.path}`);
     }
   }
+}
+
+function canRebuildShm(inventory: MetadataInventory, entry: MetadataEntry): boolean {
+  return inventory.allowShmBookkeeping === true && sqliteSharedMemory.test(entry.path) &&
+    inventory.entries.some((candidate) => candidate.path === entry.path.slice(0, -4) && candidate.identity);
 }
 
 

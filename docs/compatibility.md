@@ -31,6 +31,7 @@ The following cases define the CLI versions and scenarios to validate. They are 
 | Copilot CLI | CLI 1.0.88 in offline/BYOK mode with a local mock; use resume to check deletion, restoration, and bulk cleanup. Shared lock directories are excluded from conversation lists. | GitHub account sign-in and cloud models are outside this case. |
 | Antigravity CLI | CLI 1.3.5 with a local Gemini mock; check selected-deletion refusal, bulk cleanup, and restored IDs/content after manual whole-file restoration. Synthetic tests cover format and concurrent-change guards. | Nonempty shared protobuf summaries block selected deletion. IDE GUI, account sign-in, and cloud models are outside this case. |
 | Grok Build CLI | CLI 1.0.52 (`0920c8169e27`) with a local mock; use native session list/export to check deletion, retention, backup restoration, and bulk cleanup. | Cloud models are outside this case. |
+| Claude Code | Official storage documentation plus synthetic cases for bulk cleanup, retained settings, path changes, and process recognition. | Selected deletion is disabled; no live upstream or desktop GUI validation is claimed. |
 
 Run these CLI cases in isolated synthetic data roots with actual open-file checks. Keep selected data and backups within those roots, then move the roots to macOS Trash. Manual restoration for Codex, Copilot, Grok, and OpenCode requires recovery inspection, manifest ownership, and SHA-256 checks. Antigravity bulk cleanup has no index-rewrite backup; verify whole-file restoration against the operation journal and each moved file's hash. These cases do not provide automatic restoration in the product.
 
@@ -42,15 +43,30 @@ Paths are derived from the current user's home directory, without a fixed accoun
 
 | Agent | Supported roots |
 |---|---|
-| Codex | `~/.codex`; valid `YYYY-MM-DD` workspace folders directly inside `~/Documents/Codex` for full cleanup |
+| Codex | `~/.codex`; valid `YYYY-MM-DD` workspace folders and `.DS_Store` directly inside `~/Documents/Codex` for full cleanup |
 | Copilot CLI | `~/.copilot` |
 | Antigravity | `~/.gemini/antigravity-cli`, `~/.gemini/antigravity-ide` |
 | OpenCode | `~/.local/share/opencode`, `~/.local/state/opencode` |
 | Grok | `~/.grok` |
+| Claude Code | `~/.claude` |
 
-Custom roots selected through `CODEX_HOME`, `COPILOT_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME`, `XDG_CACHE_HOME`, and related variables are restricted to the supported defaults. A mismatch refuses the relevant operation rather than searching elsewhere. OpenCode legacy JSON supports full cleanup of known conversation subdirectories; selected deletion is unsupported.
+Custom roots selected through `CODEX_HOME`, `COPILOT_HOME`, `CLAUDE_CONFIG_DIR`, `XDG_DATA_HOME`, `XDG_STATE_HOME`, `XDG_CACHE_HOME`, and related variables are restricted to the supported defaults. A mismatch refuses the relevant operation rather than searching elsewhere. OpenCode legacy JSON supports full cleanup of known conversation subdirectories; selected deletion is unsupported.
 
-Codex full cleanup moves direct workspace folders with valid calendar dates in `YYYY-MM-DD` format to Trash, including all contained generated and project files. It preserves the `~/Documents/Codex` root, ordinary named project folders, invalid dates, and date-named files. Selected-conversation deletion does not include these folders. The dated root and its ancestors must be physical directories: relocated or symbolic-link document roots are refused until supported. This scope does not discover other workspace locations on the computer.
+Codex full cleanup moves direct workspace folders with valid calendar dates in `YYYY-MM-DD` format to Trash, including all contained generated and project files, along with `~/Documents/Codex/.DS_Store`. It preserves the `~/Documents/Codex` root, ordinary named project folders, invalid dates, and date-named files. Selected-conversation deletion does not include these folders. The dated root and its ancestors must be physical directories: relocated or symbolic-link document roots are refused until supported. This scope does not discover other workspace locations on the computer.
+
+## Memory preservation
+
+Both `clean` and `conversations` preserve supported memory stores by default. `--all` selects every agent; `--yes` skips confirmation and `--force-stop` stops processes. None of those flags enables memory deletion. Use `--include-memories` explicitly, including when previewing the deletion scope.
+
+| Agent | Memory stores kept by default | With `clean --include-memories` |
+|---|---|---|
+| Codex | `~/.codex/memories_1.sqlite`, `memories_v2_1.sqlite`, their SQLite sidecars, and `~/.codex/memories/` | Moves these supported stores to Trash |
+| Grok | `~/.grok/memory/` | Moves this store to Trash |
+| Claude Code | `~/.claude/agent-memory/` and `~/.claude/projects/<project>/memory/` | Includes subagent memory and the complete supported `projects/` tree |
+
+Claude's default cleanup retains each project directory and its `memory` child while moving the other children to Trash. Redirected storage and changes since preview still stop cleanup. Codex's default operation does not rewrite its retained memory databases or create recovery backups of them, and memory-only IDs are omitted from the conversation picker. Selected artifact ownership checks may still inspect memory IDs through private read-only copies to detect ambiguous filenames. With `conversations --include-memories`, Codex can remove attributable `stage1_outputs` and memory-stage job rows; it does not remove shared Markdown memory files or other providers' shared memory stores.
+
+Retained memories can contain context from conversations that were deleted. This policy covers the recognized memory stores above, not arbitrary notes or copies inside other cleanup targets. In particular, dated Codex workspace folders retain their documented whole-directory cleanup behavior. Existing preserved instructions, configuration, and Antigravity knowledge paths remain preserved even with `--include-memories`; the flag does not broaden cleanup to arbitrary custom stores or plugins.
 
 ## Format-specific refusals
 
@@ -58,7 +74,9 @@ Codex full cleanup moves direct workspace folders with valid calendar dates in `
 
 **OpenCode:** version 1.19.0 stores credentials and some settings in its database. Full cleanup preserves a mixed database and clears supported conversation tables and session events through a backed-up metadata update. Credentials, accounts, permissions, projects, workspaces, migrations, and verified shared events remain intact. A database containing only conversation data and migration records can still be moved to Trash as a whole. Unknown tables, triggers or views, ambiguous events, unsafe foreign keys, and sidecars without a main database block cleanup. Database changes after preview also block execution. Legacy JSON full cleanup covers `storage/session`, `message`, `part`, `todo`, `session_share`, and `session_diff`; permission, project, and unrecognized storage data are retained. Legacy JSON selected deletion remains unsupported.
 
-**Codex:** unknown databases in the root or `sqlite/`, unknown subdirectories within `sqlite/`, missing required metadata tables/columns, or unsafe ownership block operations. Additional tables inside known databases are not rejected universally; data outside the selected strategy is retained. Structural checks cannot identify every new conversation copy or future index meaning, so successful preflight does not imply compatibility with every version.
+**Codex:** both `memories_1.sqlite` and `memories_v2_1.sqlite` are recognized, including supported SQLite sidecars. They are retained unless `--include-memories` is set, as described above. The layout follows the [Codex database paths](https://github.com/openai/codex/blob/main/codex-rs/state/src/sqlite.rs) and [memory runtime](https://github.com/openai/codex/blob/main/codex-rs/state/src/runtime/memories.rs). Unknown databases in the root or `sqlite/`, unknown subdirectories within `sqlite/`, missing required metadata tables/columns in affected databases, or unsafe ownership block operations. Additional tables inside known databases are not rejected universally; data outside the selected strategy is retained. Structural checks cannot identify every new conversation copy or future index meaning, so successful preflight does not imply compatibility with every version.
+
+**Claude Code:** full cleanup covers project transcripts, subagent transcripts, tool results, `history.jsonl`, file snapshots, plans, debug logs, paste/image caches, uploads, session state, tasks, shell snapshots, feedback drafts/bundles, usage reports, and legacy logs. Project and subagent memories follow the explicit policy above. It preserves credentials, `~/.claude.json`, settings, MCP configuration, instructions, plugins, skills, configuration backups, and background-session state. Claude Desktop/Cowork data outside this root, cloud history, project source directories, and scratchpads/images under the system temporary directory are outside this scope. Per-conversation deletion is disabled because the transcript format and shared artifact ownership are not a stable deletion contract; use `clean --target claude`. See the official [directory reference](https://code.claude.com/docs/en/claude-directory) and [session documentation](https://code.claude.com/docs/en/sessions).
 
 Symbolic links, changes since discovery, open files, failed process inspection, and incomplete indexes can also prevent cleanup. Close the selected agents before deletion; open SQLite databases and their WAL, SHM, or journal files are refused. `--allow-running` is retained only for read-only dry runs and is rejected for deletion. A refusal calls for format review, not manual removal of unfamiliar data. Agents may create data again after cleanup.
 

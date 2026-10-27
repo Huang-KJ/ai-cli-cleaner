@@ -13,8 +13,8 @@ describe("selected-conversation CLI", () => {
     test.dependencies.deleteConversations = vi.fn(async (selected) => ({ deleted: [], previewed: selected, failures: [] }));
 
     expect(await runCliCommand(["conversations", "--dry-run"], test.dependencies)).toBe(0);
-    expect(test.dependencies.discoverConversations).toHaveBeenCalledExactlyOnceWith(["antigravity"]);
-    expect(test.dependencies.deleteConversations).toHaveBeenCalledExactlyOnceWith([first], { dryRun: true });
+    expect(test.dependencies.discoverConversations).toHaveBeenCalledExactlyOnceWith(["antigravity"], { includeMemories: false });
+    expect(test.dependencies.deleteConversations).toHaveBeenCalledExactlyOnceWith([first], { dryRun: true, includeMemories: false });
     expect(test.dependencies.confirm).not.toHaveBeenCalled();
     expect(test.logs.join("\n")).toContain("Preview complete: 1 conversations selected.");
   });
@@ -28,7 +28,7 @@ describe("selected-conversation CLI", () => {
     expect(await runCliCommand(["conversations", "--target", "antigravity"], test.dependencies)).toBe(0);
     expect(test.dependencies.selectAgent).not.toHaveBeenCalled();
     expect(test.dependencies.confirm).toHaveBeenCalledOnce();
-    expect(test.dependencies.deleteConversations).toHaveBeenCalledExactlyOnceWith([selected], { dryRun: false });
+    expect(test.dependencies.deleteConversations).toHaveBeenCalledExactlyOnceWith([selected], { dryRun: false, includeMemories: false });
     expect(test.dependencies.discoverConversations).toHaveBeenCalledOnce();
   });
 
@@ -52,7 +52,7 @@ describe("selected-conversation CLI", () => {
     test.dependencies.checkbox = vi.fn(async () => [selected.key, disabled.key, "stale-key"]);
     test.dependencies.deleteConversations = vi.fn(async () => ({ deleted: [], previewed: [], failures: [] }));
     expect(await runCliCommand(["conversations", "--target", "antigravity"], test.dependencies)).toBe(0);
-    expect(test.dependencies.deleteConversations).toHaveBeenCalledExactlyOnceWith([selected], { dryRun: false });
+    expect(test.dependencies.deleteConversations).toHaveBeenCalledExactlyOnceWith([selected], { dryRun: false, includeMemories: false });
   });
 
   it("does not confirm or delete when only unavailable keys are returned", async () => {

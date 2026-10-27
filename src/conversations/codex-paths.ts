@@ -11,13 +11,29 @@ export interface CodexMetadataPaths {
   logsDatabase?: string;
   goalsDatabase?: string;
   memoriesDatabase?: string;
+  memoriesV2Database?: string;
   queueDatabase?: string;
   appDatabase?: string;
   threadSummariesDatabase?: string;
   historySnapshotsDatabase?: string;
 }
 
-export function getCodexMetadataPaths(home: string): CodexMetadataPaths {
+export interface CodexMemoryOptions {
+  includeMemories?: boolean;
+}
+
+export function scopeCodexMetadata<T extends Partial<CodexMetadataPaths>>(
+  paths: T,
+  options: CodexMemoryOptions = {}
+): T {
+  if (options.includeMemories) return paths;
+  const scoped = { ...paths };
+  delete scoped.memoriesDatabase;
+  delete scoped.memoriesV2Database;
+  return scoped;
+}
+
+export function getCodexMetadataPaths(home: string, options: CodexMemoryOptions = {}): CodexMetadataPaths {
   const root = path.join(home, ".codex");
   return {
     stateDatabase: path.join(root, "state_5.sqlite"),
@@ -30,7 +46,10 @@ export function getCodexMetadataPaths(home: string): CodexMetadataPaths {
     threadHistoryDatabase: path.join(root, "thread_history_1.sqlite"),
     logsDatabase: path.join(root, "logs_2.sqlite"),
     goalsDatabase: path.join(root, "goals_1.sqlite"),
-    memoriesDatabase: path.join(root, "memories_1.sqlite"),
+    ...(options.includeMemories ? {
+      memoriesDatabase: path.join(root, "memories_1.sqlite"),
+      memoriesV2Database: path.join(root, "memories_v2_1.sqlite")
+    } : {}),
     queueDatabase: path.join(root, "queue_1.sqlite"),
     appDatabase: path.join(root, "sqlite", "codex-dev.db"),
     threadSummariesDatabase: path.join(root, "sqlite", "codex-thread-summaries-dev.db"),
@@ -48,6 +67,7 @@ export function codexMetadataFiles(paths: Partial<CodexMetadataPaths>): string[]
     paths.logsDatabase,
     paths.goalsDatabase,
     paths.memoriesDatabase,
+    paths.memoriesV2Database,
     paths.queueDatabase,
     paths.appDatabase,
     paths.threadSummariesDatabase,
@@ -57,7 +77,7 @@ export function codexMetadataFiles(paths: Partial<CodexMetadataPaths>): string[]
 
 export async function assertKnownCodexDatabases(home: string): Promise<void> {
   const root = path.resolve(home, ".codex");
-  const known = new Set(codexMetadataFiles(getCodexMetadataPaths(home)).map((file) => path.resolve(file)));
+  const known = new Set(codexMetadataFiles(getCodexMetadataPaths(home, { includeMemories: true })).map((file) => path.resolve(file)));
   const unknown: string[] = [];
   const walkBudget = createPathWalkBudget();
   // 僅檢查已定義的儲存根；新的 App 子目錄視為未知格式，不深入讀取。

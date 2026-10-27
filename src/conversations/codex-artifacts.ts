@@ -54,8 +54,9 @@ export async function readCodexArtifactIds(
   const root = path.join(home, ".codex");
   selectedIds.forEach(assertConversationId);
   await assertKnownCodexDatabases(home);
-  const paths = getCodexMetadataPaths(home);
-  const residual = await readCodexResidualIds(home, paths);
+  // 直接產物的點號名稱可能與僅存於記憶庫的 ID 碰撞，保留完整唯讀歸屬查核。
+  const paths = getCodexMetadataPaths(home, { includeMemories: true });
+  const residual = await readCodexResidualIds(home, paths, { includeMemories: true });
   if (residual.disabledReason) throw new Error(residual.warnings.join("\n"));
   const ids = new Set([...selectedIds, ...residual.ids]);
   for (const [file, kind] of [[paths.sessionIndex, "index"], [paths.historyFile, "history"]] as const) {

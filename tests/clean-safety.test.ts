@@ -1,13 +1,16 @@
 import { fixtureTrash, fixtureTemp } from "./helpers/fixture-trash.js";
-import { mkdir, readFile, rename, symlink, writeFile } from "node:fs/promises";
+import { copyFile, link, mkdir, readFile, realpath, rename, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanEntries } from "../src/cleaners/clean.js";
 import type { CleanerManifest, ScanEntry } from "../src/cleaners/types.js";
 import { findOpenPaths } from "../src/fs/open-files.js";
 import * as paths from "../src/fs/paths.js";
 import { scanManifests } from "../src/fs/scan.js";
+import { moveToSystemTrash } from "../src/fs/trash.js";
+import { inspectOperation, listOperations, withOperation, wrapOperationTrash } from "../src/recovery/operations.js";
 
 const fixtureHomes: string[] = [];
 
@@ -238,7 +241,8 @@ describe("cleanEntries safety branches", () => {
     await writeFile(wal, "wal");
     await writeFile(shm, "before");
     const entries = await scanEntries(home, ["~/.fixture/state.sqlite*"]);
-    await writeFile(shm, "changed shared memory");
+    await writeFile(shm, "after!");
+    await utimes(shm, new Date(), new Date(entries.find((entry) => entry.path === shm)!.identity!.modifiedMs + 1000));
     const trash = await makeTrash(home);
 
     const result = await cleanEntries(entries, { trash });
@@ -246,6 +250,86 @@ describe("cleanEntries safety branches", () => {
     expect(trash).toHaveBeenCalledWith([database, shm, wal], expect.any(Map));
     expect(result.deleted).toHaveLength(3);
     expect(result.failures).toEqual([]);
+  });
+
+  it("moves a synthetic WAL database through the native claim and journal after same-size SHM drift", async () => {
+    const home = await realpath(await makeHome());
+    const database = await makeSQLiteGroup(home);
+    const shm = `${database}-shm`;
+    const entries = await scanEntries(home, ["~/.fixture/state.sqlite*"]);
+    const expected = entries.find((entry) => entry.path === shm)!.identity!;
+    await utimes(shm, new Date(), new Date(expected.modifiedMs + 1000));
+    expect((await stat(shm)).mtimeMs).not.toBe(expected.modifiedMs);
+    const approved = new Map(await Promise.all(entries.map(async (entry) => [entry.path, await readFile(entry.path)] as const)));
+    const destination = path.join(home, "native-trash");
+    await mkdir(destination);
+    const run = vi.fn(async (_binary: string, files: string[]) => {
+      expect(files).toHaveLength(3);
+      for (const file of files) {
+        expect(file).toContain("/.ai-cli-cleaner/recovery/");
+        expect(file).toContain("/original/");
+        await rename(file, path.join(destination, path.basename(file)));
+      }
+    });
+    const result = await withOperation({ home, kind: "clean", target: ["codex"] }, () => cleanEntries(entries, {
+      checkOpenPaths: async () => ({ supported: true, openPaths: [] }),
+      trash: wrapOperationTrash((files, identities) => {
+        expect(identities?.get(shm)).toEqual(expected);
+        return moveToSystemTrash(files, identities!, { run });
+      })
+    }));
+    expect(result.failures).toEqual([]);
+    expect(result.deleted).toHaveLength(3);
+    expect(run).toHaveBeenCalledOnce();
+    for (const [index, entry] of entries.entries()) {
+      await expect(stat(entry.path)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await readFile(path.join(destination, `${String(index).padStart(3, "0")}-${path.basename(entry.path)}`)))
+        .toEqual(approved.get(entry.path));
+    }
+    const [operation] = await listOperations(home);
+    expect((await inspectOperation(operation!.id, home)).claims[0]?.state).toBe("trashed");
+  });
+
+  it.each(["replacement", "growth", "hardlink", "hardlink without mtime drift", "unselected main database"])(
+    "refuses SHM drift with %s", async (change) => {
+      const home = await makeHome();
+      const database = await makeSQLiteGroup(home);
+      const shm = `${database}-shm`;
+      const entries = await scanEntries(home, [change === "unselected main database" ? "~/.fixture/state.sqlite-shm" : "~/.fixture/state.sqlite*"]);
+      const original = entries.find((entry) => entry.path === shm)!.identity!;
+      if (change === "replacement") {
+        const retained = path.join(home, "retained-shm");
+        await rename(shm, retained);
+        await copyFile(retained, shm);
+      }
+      if (change === "growth") await writeFile(shm, Buffer.alloc(original.sizeBytes + 1));
+      if (change.startsWith("hardlink")) await link(shm, path.join(home, "linked-shm"));
+      if (change === "hardlink without mtime drift") expect((await stat(shm)).mtimeMs).toBe(original.modifiedMs);
+      else await utimes(shm, new Date(), new Date(original.modifiedMs + 1000));
+      const trash = vi.fn();
+      const result = await cleanEntries(entries, { trash });
+      expect(trash).not.toHaveBeenCalled();
+      expect(result.deleted).toEqual([]);
+      expect(result.failures.every((failure) => failure.error.message.includes(shm))).toBe(true);
+      expect(result.failures).toHaveLength(entries.length);
+    }
+  );
+
+  it.each(["", "-wal", "-journal"])("keeps the SQLite group when %s changes along with SHM", async (suffix) => {
+    const home = await makeHome();
+    const database = await makeSQLiteGroup(home);
+    if (suffix === "-journal") await writeFile(`${database}-journal`, "synthetic journal");
+    const entries = await scanEntries(home, ["~/.fixture/state.sqlite*"]);
+    for (const file of [`${database}-shm`, `${database}${suffix}`]) {
+      const original = entries.find((entry) => entry.path === file)!.identity!;
+      await utimes(file, new Date(), new Date(original.modifiedMs + 1000));
+    }
+    const trash = vi.fn();
+    const result = await cleanEntries(entries, { trash });
+    expect(trash).not.toHaveBeenCalled();
+    expect(result.deleted).toEqual([]);
+    expect(result.failures).toHaveLength(entries.length);
+    expect(result.failures.every((failure) => failure.error.message.includes(`${database}${suffix}`))).toBe(true);
   });
 
   it.each(["-wal", "-shm", "-journal"])(
@@ -314,6 +398,18 @@ async function makeHome(): Promise<string> {
   const home = await fixtureTemp(path.join(tmpdir(), "ai-cli-cleaner-safety-"));
   fixtureHomes.push(home);
   return home;
+}
+
+async function makeSQLiteGroup(home: string): Promise<string> {
+  const source = path.join(home, "fixture-source.sqlite");
+  const destination = path.join(home, ".fixture", "state.sqlite");
+  await mkdir(path.dirname(destination), { recursive: true });
+  const database = new DatabaseSync(source);
+  try {
+    database.exec("PRAGMA journal_mode = WAL; PRAGMA wal_autocheckpoint = 0; CREATE TABLE logs(body TEXT); INSERT INTO logs VALUES('synthetic log')");
+    for (const suffix of ["", "-wal", "-shm"]) await copyFile(`${source}${suffix}`, `${destination}${suffix}`);
+  } finally { database.close(); }
+  return destination;
 }
 
 async function makeTrash(home: string) {

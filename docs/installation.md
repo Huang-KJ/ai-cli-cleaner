@@ -1,6 +1,6 @@
 # Installation and updates
 
-Install the beta from npm. The package includes the compiled CLI, bundled runtime dependencies, native helpers, and documentation; no source build or compiler is required. The executable is named `ai-cleaner`.
+For the usual npm beta installation, start with [README](../README.md#install). This guide covers prerequisites, source and archive installations, update channels, and removal. The executable is named `ai-cleaner`.
 
 ## Requirements
 
@@ -21,50 +21,29 @@ npm --version
 
 Cleanup and conversation selection, including dry-run, refuse older systems before reading conversations or stopping agents. Help, diagnostics, and read-only recovery queries remain available. See [compatibility](compatibility.md) for storage formats and validation scope.
 
-## Install from npm
+<a id="install-from-npm"></a>
+<a id="update-an-npm-installation"></a>
 
-```bash
-npm install --global ai-cli-cleaner@beta
-ai-cleaner --version
-ai-cleaner doctor --all
-```
+## npm installation and updates
 
-The `beta` tag selects the published beta version. To install this version explicitly, use `npm install --global ai-cli-cleaner@0.1.0-beta.1`. The package declares its supported Node.js/npm versions; add `--engine-strict` if you want npm to reject unsupported versions during installation:
+The package includes compiled code, bundled runtime dependencies, and native helpers; no compiler or source build is required. The `beta` tag selects the published beta; replace it with an exact version such as `0.1.0-beta.1` to pin a release. Add `--engine-strict` to reject unsupported Node.js/npm versions during installation:
 
 ```bash
 npm install --global --engine-strict ai-cli-cleaner@beta
 ```
 
-If npm reports a global-prefix permission error, use a Node installation or user-owned prefix with appropriate permissions. Do not run cleanup as an administrator. Continue with the [quick start](../README.md#quick-start), and read [recovery](recovery.md) before deleting important data.
-
-## Update an npm installation
-
-Rerun the installation command to get the version selected by the npm `beta` tag:
-
-```bash
-npm install --global ai-cli-cleaner@beta
-ai-cleaner --version
-```
-
-The built-in `ai-cleaner update` command checks GitHub releases, not the npm registry or npm dist-tags. npm publication does not create GitHub release assets. Use the npm command above for npm beta updates.
+Rerun the install command to update, then run `ai-cleaner --version` and `ai-cleaner doctor --all`. The built-in updater checks GitHub releases; npm publication does not create those assets. If npm reports a global-prefix permission error, use a Node installation or user-owned prefix with appropriate permissions. Do not run cleanup as an administrator. Continue with the [quick start](../README.md#quick-start) and [recovery guidance](recovery.md).
 
 ## Install from source
 
-A source checkout provides an alternative installation and the development tools:
+A source checkout includes the development tools. First obtain it:
 
 ```bash
 git clone https://github.com/Huang-KJ/ai-cli-cleaner.git
 cd ai-cli-cleaner
-npm ci
-npm run build
-npm install --global .
-ai-cleaner --version
-ai-cleaner doctor --all
 ```
 
-`npm ci` installs the lockfile's development and runtime dependencies. `npm run build` compiles the CLI. Installing a local directory globally can link the command to the checkout, so retain that checkout and its built files. This installation requires network access to fetch dependencies unless they are already cached.
-
-If your supported Node.js installation has an older npm, the checkout includes an optional bootstrap that downloads the pinned npm 12.2.0 archive and verifies its SHA-512 before extracting it. Choose a new absolute destination that does not already exist:
+If your supported Node.js installation has an older npm, optionally bootstrap pinned npm 12.2.0 **before** installing dependencies. This downloads and verifies the archive's SHA-512. Choose a new absolute destination that does not exist:
 
 ```bash
 npm_runtime="$PWD/../ai-cleaner-npm-12.2.0"
@@ -73,16 +52,17 @@ export PATH="$npm_runtime/node_modules/.bin:$PATH"
 npm --version
 ```
 
-Run this from the cloned repository before `npm ci`. The PATH change applies to the current shell. The example keeps this tooling directory beside the checkout; it is not part of the CLI runtime. You can instead use an existing npm 12 installation.
-
-To use the CLI without a global installation after building:
+The PATH change applies to the current shell; this optional tooling directory is separate from the CLI runtime. With npm 12 available, install locked dependencies, build, and install the command:
 
 ```bash
-node dist/index.js --help
-node dist/index.js doctor --all
+npm ci
+npm run build
+npm install --global .
+ai-cleaner --version
+ai-cleaner doctor --all
 ```
 
-Replace `ai-cleaner` with `node dist/index.js` in command examples when running from the checkout. The package's `prepack` script runs `npm run check` when npm packs the project. A successful build or local-directory installation does not replace that full validation. For development checks, run `npm run check`.
+Network access is needed unless dependencies are cached. A global local-directory installation may link to the checkout, so retain its directory and built files. To avoid a global installation, replace `ai-cleaner` with `node dist/index.js` after building. `npm run check` runs full validation; a build or local installation alone does not replace it. npm also runs that check through `prepack` when packing the project.
 
 Update a source installation by updating the checkout, reinstalling locked dependencies, and rebuilding:
 
@@ -113,15 +93,10 @@ For a direct HTTPS archive URL, npm 12 requires the additional `--allow-remote=a
 
 ## Built-in release updates
 
-For npm beta updates, use [the npm installation command](#update-an-npm-installation). The commands below require public, published GitHub releases. They do not use npm dist-tags or private repository credentials. Check without installing:
+For npm beta updates, use [the npm installation command](#npm-installation-and-updates). The commands below require public, published GitHub releases and do not use private repository credentials. Check, then explicitly install if desired:
 
 ```bash
 ai-cleaner update
-```
-
-Install a newer GitHub release explicitly:
-
-```bash
 ai-cleaner update --install
 ```
 

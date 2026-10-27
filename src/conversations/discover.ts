@@ -9,6 +9,7 @@ import { assertKnownCodexDatabases, codexMetadataFiles, getCodexMetadataPaths } 
 import { codexArtifactOwners, codexJsonlId, isCodexRolloutName } from "./codex-artifacts.js";
 import { readCodexResidualIds } from "./codex-inventory.js";
 import { discoverAntigravityConversations } from "./discover-antigravity.js";
+import { discoverClaudeConversations } from "./claude.js";
 import {
   validateCodexRolloutPath,
   validateCodexArtifactPaths,
@@ -32,6 +33,7 @@ import type {
 
 export interface DiscoverConversationOptions {
   home?: string;
+  includeMemories?: boolean;
 }
 
 interface Candidate {
@@ -70,6 +72,12 @@ export async function discoverConversations(
   for (const target of [...new Set(targets)]) {
     try {
       const walkBudget = createPathWalkBudget();
+      if (target === "claude") {
+        const result = await discoverClaudeConversations(home, walkBudget);
+        conversations.push(...result.conversations);
+        warnings.push(...result.warnings);
+        continue;
+      }
       if (target === "antigravity") {
         const result = await discoverAntigravityConversations(home, walkBudget);
         conversations.push(...result.conversations);
@@ -77,7 +85,7 @@ export async function discoverConversations(
         continue;
       }
       const candidates = target === "codex"
-        ? await discoverCodex(home, warnings, walkBudget)
+        ? await discoverCodex(home, warnings, walkBudget, options.includeMemories)
         : target === "copilot"
           ? await discoverCopilot(home, warnings, walkBudget)
           : target === "opencode"
@@ -152,7 +160,12 @@ export async function discoverConversations(
   return { conversations, warnings: [...new Set(warnings)] };
 }
 
-async function discoverCodex(home: string, warnings: string[], walkBudget: PathWalkBudget): Promise<Candidate[]> {
+async function discoverCodex(
+  home: string,
+  warnings: string[],
+  walkBudget: PathWalkBudget,
+  includeMemories = false
+): Promise<Candidate[]> {
   const root = path.join(home, ".codex");
   try {
     const rootInfo = await fs.lstat(root);
@@ -167,7 +180,7 @@ async function discoverCodex(home: string, warnings: string[], walkBudget: PathW
   await assertKnownCodexDatabases(home);
   const metadata = {
     kind: "codex" as const,
-    ...getCodexMetadataPaths(home)
+    ...getCodexMetadataPaths(home, { includeMemories })
   };
   const { stateDatabase, sessionIndex } = metadata;
   const index = await isNormalCodexFile(root, sessionIndex, warnings)
@@ -287,7 +300,7 @@ async function discoverCodex(home: string, warnings: string[], walkBudget: PathW
       seed.workspace ??= info.workspace;
     }
   }
-  const residual = await readCodexResidualIds(home, metadata);
+  const residual = await readCodexResidualIds(home, metadata, { includeMemories });
   warnings.push(...residual.warnings);
   for (const id of residual.ids) getCodexSeed(seeds, id, titles.get(id) ?? id);
   const artifactIndex = await indexCodexArtifacts(root, [...seeds.keys()], warnings, walkBudget);

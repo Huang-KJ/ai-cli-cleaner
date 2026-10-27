@@ -42,7 +42,8 @@ const rootPaths: Record<ProviderId, string[]> = {
   copilot: ["~/.copilot"],
   antigravity: ["~/.gemini/antigravity-cli", "~/.gemini/antigravity-ide"],
   opencode: ["~/.local/share/opencode", "~/.local/state/opencode"],
-  grok: ["~/.grok"]
+  grok: ["~/.grok"],
+  claude: ["~/.claude"]
 };
 
 export async function runDoctor(targets: ProviderId[], options: DoctorOptions = {}): Promise<DoctorReport> {

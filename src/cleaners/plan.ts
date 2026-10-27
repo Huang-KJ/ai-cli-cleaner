@@ -19,17 +19,18 @@ export interface CleanPlan {
 
 export async function prepareClean(
   targets: ProviderId[],
-  options: { home?: string; trash: TrashFn; checkOpenPaths: OpenFileCheckFn }
+  options: { home?: string; trash: TrashFn; checkOpenPaths: OpenFileCheckFn; includeMemories?: boolean }
 ): Promise<CleanPlan> {
   const home = options.home ?? homedir();
-  const manifests = getManifests(targets);
+  const memoryOptions = { includeMemories: options.includeMemories ?? false };
+  const manifests = getManifests(targets, memoryOptions);
   if (!targets.length || manifests.length !== new Set(targets).size) throw new Error("Select at least one valid agent.");
   const openCode = targets.includes("opencode") ? await prepareOpenCodeBulkMetadata(home, options.trash) : undefined;
   const metadata = targets.includes("codex")
-    ? await prepareCodexConversationMetadata(home, options.trash)
+    ? await prepareCodexConversationMetadata(home, options.trash, memoryOptions)
     : undefined;
   if (metadata) await assertKnownCodexDatabases(home);
-  // SQLite 預檢可能建立 sidecar，計畫須包含預檢後的實際檔案。
+  // 預檢只操作私有副本；搬移清單仍依來源當下的資料庫及 sidecar 建立。
   const scanned = await scanManifests(manifests, { home });
   const errors = scanned.filter((entry) => entry.error);
   if (errors.length) throw new Error(errors.map((entry) => `${entry.path}: ${entry.error!.message}`).join("\n"));
@@ -37,7 +38,7 @@ export async function prepareClean(
   const entries = scanned.filter((entry) => entry.exists && !retainedPaths.has(entry.path));
   const guardPaths = [...new Set([
     ...entries.map((entry) => entry.path),
-    ...(metadata ? codexConversationMetadataPaths(home) : []),
+    ...(metadata ? codexConversationMetadataPaths(home, memoryOptions) : []),
     ...(openCode?.paths ?? [])
   ])];
   const checkClosed = async (): Promise<void> => {

@@ -60,7 +60,7 @@ describe("safe output", () => {
 
   it("escapes paths and operations in deletion plans", async () => {
     const test = fixture();
-    expect(await runCliCommand(["clean", "--target", "copilot", "--dry-run"], test.dependencies)).toBe(0);
+    expect(await runCliCommand(["clean", "--target", "copilot", "--dry-run", "--verbose"], test.dependencies)).toBe(0);
     expect(test.logs.join("\n")).not.toMatch(/[\x1b\r\x9b\u202e]/);
     expect(test.logs.join("\n")).toContain(displayText(`/fixture/${unsafe}`));
   });

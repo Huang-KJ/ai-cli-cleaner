@@ -14,6 +14,94 @@ afterEach(async () => {
 const closed = async () => ({ supported: true, openPaths: [] as string[] });
 
 describe("Codex bulk residual inventory", () => {
+  it("preserves unreadable memory databases, sidecars, Markdown, and memory-only references by default", async () => {
+    const fixture = await makeFixture();
+    const files: string[] = [];
+    for (const name of ["memories_1.sqlite", "memories_v2_1.sqlite"]) {
+      const file = path.join(fixture.root, name);
+      const database = new DatabaseSync(file);
+      database.exec(`CREATE TABLE stage1_outputs(thread_id TEXT PRIMARY KEY, raw_memory TEXT);
+        INSERT INTO stage1_outputs VALUES('selected', 'synthetic memory'), ('nested', 'synthetic retained memory')`);
+      database.close();
+      files.push(file);
+      for (const suffix of ["-wal", "-shm", "-journal"]) {
+        await fs.writeFile(`${file}${suffix}`, "synthetic retained sidecar");
+        files.push(`${file}${suffix}`);
+      }
+    }
+    const markdown = path.join(fixture.root, "memories", "MEMORY.md");
+    await fs.mkdir(path.dirname(markdown));
+    await fs.writeFile(markdown, "合成長期記憶\n");
+    files.push(markdown);
+    const original = new Map(await Promise.all(files.map(async (file) => [file, await fs.readFile(file)] as const)));
+    await fs.writeFile(path.join(fixture.root, "history.jsonl"), '{"session_id":"selected"}\n');
+    for (const file of files) await fs.chmod(file, 0o000);
+    try {
+      const plan = await prepareClean(["codex"], {
+        home: fixture.home,
+        checkOpenPaths: async (paths) => {
+          expect(paths.some((file) => file.includes("/.codex/memories"))).toBe(false);
+          return closed();
+        },
+        trash: async (paths) => {
+          expect(paths.some((file) => file.includes("/.codex/memories"))).toBe(false);
+          await fixture.move(paths);
+        }
+      });
+      expect(plan.entries.map((entry) => path.basename(entry.path))).toEqual(["history.jsonl"]);
+      const result = await plan.execute();
+      expect(result.failures).toEqual([]);
+      expect(result.deleted.map((entry) => path.basename(entry.path))).toEqual(["history.jsonl"]);
+    } finally {
+      for (const file of files) await fs.chmod(file, 0o600);
+    }
+    for (const [file, bytes] of original) expect(await fs.readFile(file)).toEqual(bytes);
+    expect(JSON.parse(await fs.readFile(fixture.global, "utf8"))).toEqual({
+      "pinned-thread-ids": ["nested", "remote-only"], theme: "dark"
+    });
+  });
+
+  it("moves both memory database generations and removes their global references", async () => {
+    const fixture = await makeFixture();
+    const databases = ["memories_1.sqlite", "memories_v2_1.sqlite"];
+    for (const file of databases) {
+      const database = new DatabaseSync(path.join(fixture.root, file));
+      database.exec(`CREATE TABLE stage1_outputs(thread_id TEXT PRIMARY KEY, raw_memory TEXT);
+        CREATE TABLE jobs(kind TEXT, job_key TEXT, last_error TEXT, PRIMARY KEY(kind, job_key));
+        CREATE TABLE consolidation_progress(singleton INTEGER PRIMARY KEY, max_thread_count INTEGER);
+        INSERT INTO stage1_outputs VALUES('selected', 'synthetic memory');
+        INSERT INTO jobs VALUES('memory_stage1', 'nested', 'synthetic error'),
+          ('memory_consolidate_global', 'global', 'synthetic shared error');
+        INSERT INTO consolidation_progress VALUES(1, 200)`);
+      database.close();
+    }
+    const plan = await prepareClean(["codex"], { home: fixture.home, includeMemories: true, checkOpenPaths: closed, trash: fixture.move });
+    expect(new Set(plan.entries.map((entry) => path.basename(entry.path)))).toEqual(new Set(databases));
+    const result = await plan.execute();
+    expect(result.failures).toEqual([]);
+    expect(result.deleted).toHaveLength(2);
+    for (const file of databases) await expect(fs.lstat(path.join(fixture.root, file))).rejects.toMatchObject({ code: "ENOENT" });
+    expect(JSON.parse(await fs.readFile(fixture.global, "utf8"))).toEqual({
+      "pinned-thread-ids": ["remote-only"], theme: "dark"
+    });
+  });
+
+  it("guards v2 memory bytes changed after bulk preview", async () => {
+    const fixture = await makeFixture();
+    const file = path.join(fixture.root, "memories_v2_1.sqlite");
+    const database = new DatabaseSync(file);
+    database.exec("CREATE TABLE stage1_outputs(thread_id TEXT PRIMARY KEY); INSERT INTO stage1_outputs VALUES('selected')");
+    database.close();
+    const plan = await prepareClean(["codex"], { home: fixture.home, includeMemories: true, checkOpenPaths: closed, trash: fixture.move });
+    const writer = new DatabaseSync(file);
+    writer.exec("INSERT INTO stage1_outputs VALUES('concurrent')");
+    writer.close();
+    const before = await fs.readFile(file);
+    await expect(plan.execute()).rejects.toThrow(/Metadata changed after preflight/);
+    expect(await fs.readFile(file)).toEqual(before);
+    expect(JSON.parse(await fs.readFile(fixture.global, "utf8"))["pinned-thread-ids"]).toContain("selected");
+  });
+
   it.each(["Alex Mac", "測試使用者"])(
     "moves complete dated storage trees only from the selected home %s",
     async (name) => {

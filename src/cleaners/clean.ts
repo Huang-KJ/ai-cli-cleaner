@@ -1,4 +1,5 @@
 import path from "node:path";
+import { lstat } from "node:fs/promises";
 import type { OpenFileCheck } from "../fs/open-files.js";
 import {
   getCanonicalPath,
@@ -9,6 +10,7 @@ import {
 } from "../fs/paths.js";
 import type { CleanResult, ScanEntry } from "./types.js";
 import type { ClaimIdentity } from "../fs/claims.js";
+import { validatePreservationGuards } from "../fs/preservation.js";
 
 export type TrashFn = (paths: string[], expected?: Map<string, ClaimIdentity>) => Promise<void>;
 export type OpenFileCheckFn = (paths: string[]) => Promise<OpenFileCheck>;
@@ -22,6 +24,7 @@ export interface CleanOptions {
 
 export async function validateEntries(entries: ScanEntry[]): Promise<void> {
   for (const group of groupRelatedEntries(entries.filter((entry) => entry.exists && !entry.error))) {
+    await validatePreservationGuards(group.flatMap((entry) => entry.preservationGuards ?? []));
     if (group.some((entry) => !path.isAbsolute(entry.path))) throw new Error("Refusing to clean a non-absolute path.");
     const changed = await findChangedEntry(group);
     if (changed) throw new Error(`Path changed after scanning; rerun the command: ${changed.path}`);
@@ -141,23 +144,33 @@ async function findChangedEntry(
       return entry;
     }
 
-    // SQLite 唯讀連線也可能更新 -shm；仍須確認路徑未重新導向且仍是一般檔案。
-    if (entry.path.toLowerCase().endsWith("-shm") &&
-      getSQLiteBasePath(entry.path) !== undefined &&
-      entry.identity.kind === "file" && currentIdentity.kind === "file") {
-      continue;
-    }
-
     const identityChanged =
       currentIdentity.device !== entry.identity.device ||
       currentIdentity.inode !== entry.identity.inode ||
       currentIdentity.kind !== entry.identity.kind;
+    if (identityChanged) return entry;
+    // SHM 的讀取記帳可改變 mtime；僅容許完整群組內同一個、同長度且無硬連結的一般檔案。
+    const base = getSQLiteBasePath(entry.path);
+    if (entry.path.toLowerCase().endsWith("-shm") && base &&
+        entry.identity.kind === "file" && currentIdentity.kind === "file") {
+      try {
+        const info = await lstat(entry.path);
+        if (!info.isFile() || info.nlink !== 1 || info.dev !== entry.identity.device ||
+            info.ino !== entry.identity.inode || info.size !== entry.identity.sizeBytes) return entry;
+      } catch {
+        return entry;
+      }
+      if (currentIdentity.sizeBytes === entry.identity.sizeBytes &&
+          currentIdentity.modifiedMs !== entry.identity.modifiedMs &&
+          entry.sqliteGroup?.complete && entry.sqliteGroup.members.includes(base) &&
+          entries.some((member) => member.path === base && member.identity?.kind === "file")) continue;
+    }
     const contentChanged =
       currentIdentity.modifiedMs !== entry.identity.modifiedMs ||
       currentIdentity.sizeBytes !== entry.identity.sizeBytes ||
       currentIdentity.treeFingerprint !== entry.identity.treeFingerprint;
 
-    if (identityChanged || contentChanged) {
+    if (contentChanged) {
       return entry;
     }
   }

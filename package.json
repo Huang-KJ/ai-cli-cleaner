@@ -1,6 +1,6 @@
 {
   "name": "ai-cli-cleaner",
-  "version": "0.1.0-beta.1",
+  "version": "0.1.0-beta.2",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Huang-KJ/ai-cli-cleaner.git"
@@ -13,7 +13,7 @@
   "allowScripts": {
     "fsevents": false
   },
-  "description": "Safely delete local conversations from Codex, Copilot, Antigravity, OpenCode, and Grok.",
+  "description": "Safely delete local conversations from Codex, Copilot, Antigravity, OpenCode, Grok, and Claude Code.",
   "keywords": [
     "ai-agent",
     "cli",
@@ -24,7 +24,8 @@
     "github-copilot",
     "antigravity",
     "opencode",
-    "grok"
+    "grok",
+    "claude-code"
   ],
   "type": "module",
   "bin": {

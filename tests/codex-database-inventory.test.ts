@@ -16,7 +16,7 @@ async function fixture() {
 }
 
 describe("Codex database format boundary", () => {
-  it.each(["new_series_1.sqlite", "sqlite/codex-prod.db", "sqlite/new.db-wal", "sqlite/v2/new.db"])(
+  it.each(["new_series_1.sqlite", "memories_v2_2.sqlite", "sqlite/codex-prod.db", "sqlite/new.db-wal", "sqlite/v2/new.db"])(
     "rejects unrecognised database storage %s before changing any data", async (relative) => {
       const home = await fixture();
       const file = path.join(home, ".codex", relative);
@@ -29,7 +29,11 @@ describe("Codex database format boundary", () => {
 
   it("allows known databases, their sidecars, and ordinary configuration files", async () => {
     const home = await fixture();
-    for (const file of ["state_5.sqlite", "state_5.sqlite-wal", "config.toml", "sqlite/codex-dev.db", "sqlite/codex-dev.db-shm"]) {
+    for (const file of [
+      "state_5.sqlite", "state_5.sqlite-wal", "memories_v2_1.sqlite", "memories_v2_1.sqlite-shm",
+      "memories_v2_1.sqlite-wal", "memories_v2_1.sqlite-journal", "config.toml",
+      "sqlite/codex-dev.db", "sqlite/codex-dev.db-shm"
+    ]) {
       await fs.writeFile(path.join(home, ".codex", file), "fixture");
     }
     await expect(assertKnownCodexDatabases(home)).resolves.toBeUndefined();

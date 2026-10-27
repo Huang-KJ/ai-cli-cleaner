@@ -3,9 +3,11 @@ import path from "node:path";
 import { cleanEntries, validateEntries } from "../cleaners/clean.js";
 import { getCanonicalPath } from "../fs/paths.js";
 import type { ScanEntry } from "../cleaners/types.js";
-import { codexMetadataFiles, type CodexMetadataPaths } from "./codex-paths.js";
+import { codexMetadataFiles, scopeCodexMetadata, type CodexMetadataPaths } from "./codex-paths.js";
+import { readCodexResidualIds } from "./codex-inventory.js";
+import { readJsonlLines } from "./metadata-jsonl.js";
 import { prepareCodexThreadsMetadata, prepareLiveCodexThreadsMetadata } from "./codex-metadata.js";
-import { codexDirectArtifact } from "./codex-artifacts.js";
+import { codexDirectArtifact, codexJsonlId } from "./codex-artifacts.js";
 import { attachMetadataFailure, withSqliteSidecars } from "./metadata-safety.js";
 import {
   assertCodexConversationsPathsUnchanged, assertSafeHomePaths,
@@ -27,8 +29,10 @@ export async function deleteCodexConversations(
   let plan: Awaited<ReturnType<typeof prepareCodexThreadsMetadata>> | undefined;
   try {
     const canonicalHome = await getCanonicalPath(home);
-    const metadata = mergeMetadata(conversations);
+    const originalMetadata = mergeMetadata(conversations);
+    const metadata = scopeCodexMetadata(originalMetadata, options);
     const metadataPaths = withSqliteSidecars(codexMetadataFiles(metadata));
+    const originalMetadataSet = new Set(withSqliteSidecars(codexMetadataFiles(originalMetadata)).map((file) => path.resolve(file)));
     const assertIndexesClosed = async (): Promise<void> => {
       const indexes = await options.checkOpenPaths(metadataPaths);
       if (!indexes.supported) result.openFileCheckUnsupported = true;
@@ -45,7 +49,8 @@ export async function deleteCodexConversations(
     await assertCodexConversationsPathsUnchanged(conversations, home);
     const ownedPaths = [...new Set([
       ...entries.filter((entry) => entry.exists).map((entry) => entry.path),
-      ...conversations.flatMap((item) => item.guardPaths).filter((file) => !metadataSet.has(path.resolve(file)))
+      ...conversations.flatMap((item) => item.guardPaths)
+        .filter((file) => !metadataSet.has(path.resolve(file)) && !originalMetadataSet.has(path.resolve(file)))
     ])];
     await assertSafeHomePaths([...ownedPaths, ...metadataPaths], home, "inspect");
     if (await getCanonicalPath(home) !== canonicalHome) {
@@ -60,7 +65,11 @@ export async function deleteCodexConversations(
     }
     plan = await (options.dryRun ? prepareLiveCodexThreadsMetadata : prepareCodexThreadsMetadata)(
       home, metadata, conversations.map((item) => item.id), options.trash,
-      [...conversations.flatMap((item) => item.dataPaths), ...entries.filter((entry) => entry.exists).map((entry) => entry.path)]);
+      [...conversations.flatMap((item) => item.dataPaths), ...entries.filter((entry) => entry.exists).map((entry) => entry.path)],
+      { includeMemories: options.includeMemories });
+    if (!options.includeMemories && (originalMetadata.memoriesDatabase || originalMetadata.memoriesV2Database)) {
+      await assertNonMemorySelection(conversations.filter((item) => !item.dataPaths.length), metadata, home);
+    }
     if (options.dryRun) {
       await assertCodexConversationsPathsUnchanged(conversations, home);
       result.previewed.push(...conversations);
@@ -109,6 +118,30 @@ export async function deleteCodexConversations(
       result.failures.push({ conversation, error: details, deletedPaths: batch ? moved : details.deletedPaths,
         metadataChanged: details.metadataChanged, recoveryPath: details.recoveryPath });
     }
+  }
+}
+
+async function assertNonMemorySelection(
+  conversations: ConversationRecord[],
+  metadata: CodexMetadataPaths,
+  home: string
+): Promise<void> {
+  if (!conversations.length) return;
+  const residual = await readCodexResidualIds(home, metadata);
+  if (residual.disabledReason) throw new Error(residual.warnings.join("\n"));
+  const ids = new Set(residual.ids);
+  for (const [file, kind] of [[metadata.sessionIndex, "index"], [metadata.historyFile, "history"]] as const) {
+    if (!file) continue;
+    try {
+      for await (const { line } of readJsonlLines(file)) {
+        if (line.trim()) ids.add(codexJsonlId(JSON.parse(line), kind));
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+  if (conversations.some((item) => !ids.has(item.id))) {
+    throw new Error("Memory-only conversations are preserved; use --include-memories to delete their memory records.");
   }
 }
 

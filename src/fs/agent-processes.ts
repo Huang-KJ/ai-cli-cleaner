@@ -52,19 +52,23 @@ export function parseAgentProcesses(output: string, hasAccounting = false): Agen
 
 export function identifyAgent(command: string, accounting?: string): ProviderId | undefined {
   if (accounting !== undefined) {
+    const nativeClaude = /^\/[^\r\n]*\/\.local\/share\/claude\/versions\/(\d+\.\d+\.\d+(?:-[\w.-]+)?)(?:\s|$)/.exec(command)?.[1];
+    if (nativeClaude && accounting === nativeClaude) return "claude";
     // argv0 與 comm 都可偽造；先以 kernel 會計名稱限制 provider，再放寬 App 前綴空格。
     const provider = /^(?:ChatGPT$|Codex(?: |$)|codex(?:-|$))/.test(accounting) ? "codex"
       : /^(?:Antigravity(?: |$)|antigravity$)/.test(accounting) ? "antigravity"
         : /^(?:OpenCode(?: |$)|opencode$)/.test(accounting) ? "opencode"
           : /^(?:Grok(?: |$)|grok(?:-|$))/.test(accounting) ? "grok"
-            : /^(?:Copilot(?: |$)|copilot$)/.test(accounting) ? "copilot" : undefined;
+            : /^(?:Copilot(?: |$)|copilot$)/.test(accounting) ? "copilot"
+              : /^(?:Claude(?: |$)|claude$)/.test(accounting) ? "claude" : undefined;
     const detected = identifyAgent(command);
     if (detected && detected === provider) return detected;
     if (accounting === "node") {
       if (/^(?:\S*\/)?node\s+\S*\/node_modules\/@openai\/codex\/bin\/codex\.js(?:\s|$)/.test(command)) return "codex";
       if (/^(?:\S*\/)?node\s+\S*\/node_modules\/@github\/copilot\/dist\/cli\.js(?:\s|$)/.test(command)) return "copilot";
+      if (/^(?:\S*\/)?node\s+\S*\/node_modules\/@anthropic-ai\/claude-code\/cli\.js(?:\s|$)/.test(command)) return "claude";
       const script = /^(?:\S*\/)?node\s+(\S+)/.exec(command)?.[1];
-      if (/\/node_modules\/(?:@openai\/codex\/bin\/codex\.js|@github\/copilot\/dist\/cli\.js)(?:\s|$)/.test(command) &&
+      if (/\/node_modules\/(?:@openai\/codex\/bin\/codex\.js|@github\/copilot\/dist\/cli\.js|@anthropic-ai\/claude-code\/cli\.js)(?:\s|$)/.test(command) &&
           (!script || !/\.[cm]?js$/.test(script))) {
         throw new Error("Cannot determine the Node agent script boundary; operation canceled.");
       }
@@ -73,7 +77,7 @@ export function identifyAgent(command: string, accounting?: string): ProviderId 
     if (!provider) return undefined;
     if (provider === "codex" && (/^\/[^\r\n]*\/Codex\.app\/Contents\//.test(command) ||
         /^\/[^\r\n]*\/ChatGPT\.app\/Contents\/(?:MacOS\/ChatGPT(?:\s|$)|Frameworks\/Codex Framework\.framework\/|Resources\/codex-cli\/)/.test(command))) return provider;
-    const app = { antigravity: "Antigravity", opencode: "OpenCode", grok: "Grok", copilot: "Copilot" }[provider as Exclude<ProviderId, "codex">];
+    const app = { antigravity: "Antigravity", opencode: "OpenCode", grok: "Grok", copilot: "Copilot", claude: "Claude" }[provider as Exclude<ProviderId, "codex">];
     if (app && new RegExp(`^/[^\\r\\n]*/${app}\\.app/Contents/`).test(command)) return provider;
     throw new Error("Cannot confirm the agent executable location; operation canceled.");
   }
@@ -93,6 +97,10 @@ export function identifyAgent(command: string, accounting?: string): ProviderId 
   if (/^\S*\/Copilot\.app\/Contents\//.test(command) ||
       /^(?:\S*\/)?copilot(?:\s|$)/.test(command) ||
       /^(?:\S*\/)?node\s+\S*\/node_modules\/@github\/copilot\/dist\/cli\.js(?:\s|$)/.test(command)) return "copilot";
+  if (/^\S*\/Claude\.app\/Contents\//.test(command) ||
+      /^(?:\S*\/)?claude(?:\s|$)/.test(command) ||
+      /^\S*\/\.local\/share\/claude\/versions\/\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\s|$)/.test(command) ||
+      /^(?:\S*\/)?node\s+\S*\/node_modules\/@anthropic-ai\/claude-code\/cli\.js(?:\s|$)/.test(command)) return "claude";
   return undefined;
 }
 
@@ -120,6 +128,7 @@ export async function findRunningAgents(
     // 不回傳原始 stderr 或命令列，避免洩漏帳號、路徑及參數。
     throw new Error("Cannot confirm agent process status; operation canceled. Run doctor to check ps first.");
   }
+  if (selected.size === 0) return [];
   return processes.flatMap((item) => {
     if (item.uid !== uid) return [];
     const providerId = identifyAgent(item.command, item.accounting);

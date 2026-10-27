@@ -58,7 +58,7 @@ interface OperationContext {
 }
 const context = new AsyncLocalStorage<OperationContext>();
 const operationIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const providers = new Set(["codex", "copilot", "antigravity", "opencode", "grok"]);
+const providers = new Set(["codex", "copilot", "antigravity", "opencode", "grok", "claude"]);
 
 export async function withOperation<T>(options: {
   home?: string;
@@ -304,7 +304,7 @@ function stringArray(value: unknown): value is string[] { return Array.isArray(v
 
 const providerRoots: Record<string, string[]> = {
   codex: [".codex"], copilot: [".copilot"], antigravity: [".gemini"],
-  opencode: [".local", "share", "opencode"], grok: [".grok"]
+  opencode: [".local", "share", "opencode"], grok: [".grok"], claude: [".claude"]
 };
 
 async function inspectBackups(operation: OperationRecord, home: string): Promise<BackupInspection[]> {

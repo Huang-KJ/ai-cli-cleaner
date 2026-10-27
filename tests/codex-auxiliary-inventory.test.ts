@@ -6,6 +6,8 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import { discoverConversations } from "../src/conversations/discover.js";
 import { deleteConversations } from "../src/conversations/delete.js";
+import { getCodexMetadataPaths } from "../src/conversations/codex-paths.js";
+import { prepareCodexThreadsMetadata, prepareLiveCodexThreadsMetadata } from "../src/conversations/codex-metadata.js";
 
 const homes: string[] = [];
 afterEach(async () => {
@@ -21,6 +23,7 @@ const sources = [
   ["goals_1.sqlite", "thread_goals"],
   ["goals_1.sqlite", "thread_goal_continuation_deferrals"],
   ["memories_1.sqlite", "stage1_outputs"],
+  ["memories_v2_1.sqlite", "stage1_outputs"],
   ["queue_1.sqlite", "queued_items"],
   ["queue_1.sqlite", "queued_thread_revisions"],
   ["sqlite/codex-dev.db", "automation_runs"],
@@ -28,19 +31,170 @@ const sources = [
 ] as const;
 
 describe("Codex auxiliary metadata-only inventory", () => {
+  it.each([false, true])("preserves unreadable memory stores and Markdown by default; preview=%s", async (dryRun) => {
+    const home = await makeHome();
+    const memory = await seedMemories(home);
+    const rollout = path.join(home, ".codex", "sessions", "selected.jsonl");
+    await fs.mkdir(path.dirname(rollout));
+    await fs.writeFile(rollout, '{"type":"session_meta","payload":{"id":"selected"}}\n');
+    const discovered = await discoverConversations(["codex"], { home });
+    expect(discovered.warnings).toEqual([]);
+    expect(discovered.conversations.map((item) => item.id)).toEqual(["selected"]);
+    expect(discovered.conversations[0]?.guardPaths.some((file) => file.includes("/.codex/memories"))).toBe(false);
+    const optedIn = await discoverConversations(["codex"], { home, includeMemories: true });
+    const selected = optedIn.conversations.find((item) => item.id === "selected")!;
+    const move = movingTrash(home);
+    for (const file of memory.keys()) await fs.chmod(file, 0o000);
+    try {
+      const result = await deleteConversations([selected], {
+        home, dryRun,
+        checkOpenPaths: async (files) => {
+          expect(files.some((file) => file.includes("/.codex/memories"))).toBe(false);
+          return closed();
+        },
+        trash: async (files) => {
+          expect(files.some((file) => file.includes("/.codex/memories"))).toBe(false);
+          await move(files);
+        }
+      });
+      expect(result.failures).toEqual([]);
+      expect(dryRun ? result.previewed : result.deleted).toEqual([selected]);
+      const remaining = await discoverConversations(["codex"], { home });
+      expect(remaining.warnings).toEqual([]);
+      expect(remaining.conversations.map((item) => item.id)).toEqual(dryRun ? ["selected"] : []);
+    } finally {
+      for (const file of memory.keys()) await fs.chmod(file, 0o600);
+    }
+    for (const [file, bytes] of memory) expect(await fs.readFile(file)).toEqual(bytes);
+    await expect(fs.lstat(path.join(home, ".ai-cli-cleaner"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("refuses to report memory-only opt-in candidates deleted when memories are preserved", async () => {
+    const home = await makeHome();
+    const memory = await seedMemories(home);
+    expect((await discoverConversations(["codex"], { home })).conversations).toEqual([]);
+    const optedIn = await discoverConversations(["codex"], { home, includeMemories: true });
+    const selected = optedIn.conversations.find((item) => item.id === "selected")!;
+    expect(selected.dataPaths).toEqual([]);
+    for (const file of memory.keys()) await fs.chmod(file, 0o000);
+    try {
+      const result = await deleteConversations([selected], {
+        home, checkOpenPaths: closed, trash: async () => { throw new Error("不得搬移資料"); }
+      });
+      expect(result.deleted).toEqual([]);
+      expect(result.failures).toHaveLength(1);
+      expect(result.failures[0]?.error.message).toMatch(/Memory-only conversations are preserved/);
+    } finally {
+      for (const file of memory.keys()) await fs.chmod(file, 0o600);
+    }
+    for (const [file, bytes] of memory) expect(await fs.readFile(file)).toEqual(bytes);
+    await expect(fs.lstat(path.join(home, ".ai-cli-cleaner"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it.each([
+    ["offline", prepareCodexThreadsMetadata], ["preview", prepareLiveCodexThreadsMetadata]
+  ] as const)("excludes supplied memory metadata paths from the default %s API", async (label, prepare) => {
+    const home = await makeHome();
+    const memory = await seedMemories(home);
+    const paths = getCodexMetadataPaths(home, { includeMemories: true });
+    for (const file of memory.keys()) await fs.chmod(file, 0o000);
+    try {
+      const plan = await prepare(home, paths, ["selected"], async () => { throw new Error("不得搬移資料"); });
+      expect(plan.paths.some((file) => file.includes("/.codex/memories"))).toBe(false);
+      expect(plan.operations).toEqual([]);
+      await plan.prepareRecovery();
+      if (label === "preview") await expect(plan.execute()).rejects.toThrow(/require stopped agents/);
+      else await plan.execute();
+    } finally {
+      for (const file of memory.keys()) await fs.chmod(file, 0o600);
+    }
+    for (const [file, bytes] of memory) expect(await fs.readFile(file)).toEqual(bytes);
+  });
+
+  it.each(["memories_1.sqlite", "memories_v2_1.sqlite"])(
+    "discovers stage-1-only jobs and preserves shared jobs when deleting from %s", async (file) => {
+      const home = await makeHome();
+      const database = await makeDatabase(home, file);
+      database.exec(`CREATE TABLE stage1_outputs(thread_id TEXT PRIMARY KEY, raw_memory TEXT);
+        CREATE TABLE jobs(kind TEXT, job_key TEXT, last_error TEXT, PRIMARY KEY(kind, job_key));
+        CREATE TABLE consolidation_progress(singleton INTEGER PRIMARY KEY, max_thread_count INTEGER);
+        INSERT INTO stage1_outputs VALUES('retained', 'synthetic retained memory');
+        INSERT INTO jobs VALUES('memory_stage1', 'selected', 'synthetic selected error'),
+          ('memory_stage1', 'retained', 'synthetic retained error'),
+          ('memory_consolidate_global', 'global', 'synthetic shared error'),
+          ('future_kind', 'selected', 'synthetic unrelated error');
+        INSERT INTO consolidation_progress VALUES(1, 200)`);
+      database.close();
+      const discovery = await discoverConversations(["codex"], { home, includeMemories: true });
+      expect(discovery.warnings).toEqual([]);
+      expect(discovery.conversations.map((item) => item.id).sort()).toEqual(["retained", "selected"]);
+      const selected = discovery.conversations.find((item) => item.id === "selected")!;
+      const result = await deleteConversations([selected], { home, includeMemories: true, checkOpenPaths: closed, trash: movingTrash(home) });
+      expect(result.failures).toEqual([]);
+      const retained = new DatabaseSync(path.join(home, ".codex", file), { readOnly: true });
+      try {
+        expect(retained.prepare("SELECT * FROM stage1_outputs").all()).toEqual([
+          { thread_id: "retained", raw_memory: "synthetic retained memory" }
+        ]);
+        expect(retained.prepare("SELECT * FROM jobs ORDER BY kind").all()).toEqual([
+          { kind: "future_kind", job_key: "selected", last_error: "synthetic unrelated error" },
+          { kind: "memory_consolidate_global", job_key: "global", last_error: "synthetic shared error" },
+          { kind: "memory_stage1", job_key: "retained", last_error: "synthetic retained error" }
+        ]);
+        expect(retained.prepare("SELECT * FROM consolidation_progress").all()).toEqual([
+          { singleton: 1, max_thread_count: 200 }
+        ]);
+      } finally { retained.close(); }
+    }
+  );
+
+  it.each(["missing-stage1", "missing-kind", "unsafe-job-key"])(
+    "refuses unsupported v2 memory %s before moving conversation files", async (kind) => {
+      const home = await makeHome();
+      const history = path.join(home, ".codex", "history.jsonl");
+      const original = '{"session_id":"valid"}\n';
+      await fs.writeFile(history, original);
+      const database = await makeDatabase(home, "memories_v2_1.sqlite");
+      if (kind !== "missing-stage1") database.exec("CREATE TABLE stage1_outputs(thread_id TEXT)");
+      if (kind === "missing-kind") database.exec("CREATE TABLE jobs(job_key TEXT)");
+      else {
+        database.exec("CREATE TABLE jobs(kind TEXT, job_key TEXT)");
+        database.prepare("INSERT INTO jobs VALUES('memory_stage1', ?)")
+          .run(kind === "unsafe-job-key" ? "../unsafe" : "selected");
+      }
+      database.close();
+      const before = await fs.readFile(path.join(home, ".codex", "memories_v2_1.sqlite"));
+      const discovery = await discoverConversations(["codex"], { home, includeMemories: true });
+      expect(discovery.conversations[0]?.disabledReason).toBeTruthy();
+      expect(discovery.conversations.every((item) => item.disabledReason)).toBe(true);
+      expect(discovery.warnings.join("\n")).toMatch(
+        kind === "missing-stage1" ? /Missing required table stage1_outputs/
+          : kind === "missing-kind" ? /missing required column kind/ : /Invalid conversation ID/
+      );
+      const result = await deleteConversations(discovery.conversations, {
+        home, includeMemories: true, checkOpenPaths: closed, trash: async () => { throw new Error("不得搬移資料"); }
+      });
+      expect(result.deleted).toEqual([]);
+      expect(result.failures).toHaveLength(discovery.conversations.length);
+      expect(await fs.readFile(history, "utf8")).toBe(original);
+      expect(await fs.readFile(path.join(home, ".codex", "memories_v2_1.sqlite"))).toEqual(before);
+    }
+  );
+
   it.each(sources)("discovers and deletes only the selected residual ID in %s/%s", async (file, table) => {
     const home = await makeHome();
+    const includeMemories = file.startsWith("memories");
     const database = await makeDatabase(home, file);
     database.exec(`CREATE TABLE "${table}"(thread_id TEXT, body TEXT);
       INSERT INTO "${table}" VALUES('selected', 'synthetic selected content'), ('retained', 'synthetic retained content')`);
     database.close();
-    const discovery = await discoverConversations(["codex"], { home });
+    const discovery = await discoverConversations(["codex"], { home, includeMemories });
     expect(discovery.warnings).toEqual([]);
     expect(discovery.conversations.map((item) => item.id).sort()).toEqual(["retained", "selected"]);
     expect(discovery.conversations.every((item) => item.dataPaths.length === 0)).toBe(true);
     const selected = discovery.conversations.find((item) => item.id === "selected")!;
     expect(selected.disabledReason).toBeUndefined();
-    const result = await deleteConversations([selected], { home, checkOpenPaths: closed, trash: movingTrash(home) });
+    const result = await deleteConversations([selected], { home, includeMemories, checkOpenPaths: closed, trash: movingTrash(home) });
     expect(result.failures).toEqual([]);
     expect(result.deleted).toEqual([selected]);
     const retained = new DatabaseSync(path.join(home, ".codex", file), { readOnly: true });
@@ -295,6 +449,23 @@ async function makeDatabase(home: string, file: string) {
   const target = path.join(home, ".codex", file);
   await fs.mkdir(path.dirname(target), { recursive: true });
   return new DatabaseSync(target);
+}
+
+async function seedMemories(home: string): Promise<Map<string, Buffer>> {
+  const files: string[] = [];
+  for (const name of ["memories_1.sqlite", "memories_v2_1.sqlite"]) {
+    const file = path.join(home, ".codex", name);
+    const database = new DatabaseSync(file);
+    database.exec(`CREATE TABLE stage1_outputs(thread_id TEXT PRIMARY KEY, raw_memory TEXT);
+      INSERT INTO stage1_outputs VALUES('selected', 'synthetic selected memory'), ('memory-only', 'synthetic retained memory')`);
+    database.close();
+    files.push(file);
+  }
+  const markdown = path.join(home, ".codex", "memories", "MEMORY.md");
+  await fs.mkdir(path.dirname(markdown));
+  await fs.writeFile(markdown, "合成長期記憶\n");
+  files.push(markdown);
+  return new Map(await Promise.all(files.map(async (file) => [file, await fs.readFile(file)] as const)));
 }
 
 const closed = async () => ({ supported: true, openPaths: [] as string[] });

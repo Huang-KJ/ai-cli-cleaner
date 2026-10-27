@@ -14,6 +14,28 @@ function row(pid: number, ppid: number, uid: number, command: string, time = sta
 }
 
 describe("agent process detection", () => {
+  it("recognizes Claude native, npm, and desktop processes", () => {
+    expect(identifyAgent("/Users/fixture/.local/bin/claude --resume", "claude")).toBe("claude");
+    expect(identifyAgent("claude --resume")).toBe("claude");
+    expect(identifyAgent("/Users/fixture/.local/share/claude/versions/2.1.289", "claude")).toBe("claude");
+    expect(identifyAgent("/Users/fixture/.local/share/claude/versions/2.1.289", "2.1.289")).toBe("claude");
+    expect(identifyAgent("/Users/fixture/.local/share/claude/versions/2.1.289-next --resume", "2.1.289-next")).toBe("claude");
+    expect(identifyAgent("/Users/Fixture User/.local/share/claude/versions/2.1.289 --resume", "2.1.289")).toBe("claude");
+    expect(identifyAgent("/usr/local/bin/node /usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js", "node")).toBe("claude");
+    expect(identifyAgent("/Applications/Claude.app/Contents/MacOS/Claude", "Claude")).toBe("claude");
+    expect(identifyAgent("/Synthetic Folder/Claude.app/Contents/Frameworks/Claude Helper.app/Contents/MacOS/Claude Helper", "Claude Helper")).toBe("claude");
+  });
+
+  it("does not identify Claude mentions or unrelated scripts as Claude", () => {
+    expect(identifyAgent("/bin/zsh -c claude --resume", "zsh")).toBeUndefined();
+    expect(identifyAgent("/bin/sleep /Applications/Claude.app/Contents/MacOS/Claude", "sleep")).toBeUndefined();
+    expect(identifyAgent("/bin/sleep /Users/fixture/.local/share/claude/versions/2.1.289", "sleep")).toBeUndefined();
+    expect(identifyAgent("/Users/fixture/.local/share/claude/versions/2.1.289-next", "2.1.289")).toBeUndefined();
+    expect(identifyAgent("/usr/local/bin/node /tmp/other.js /usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js", "node")).toBeUndefined();
+    expect(() => identifyAgent("/usr/local/bin/node /Synthetic Folder/node_modules/@anthropic-ai/claude-code/cli.js", "node"))
+      .toThrow(/Cannot determine the Node agent script boundary/);
+  });
+
   it("identifies Codex App, app-server, helper, and agent executables", () => {
     expect(identifyAgent("/Applications/ChatGPT.app/Contents/MacOS/ChatGPT")).toBe("codex");
     expect(identifyAgent("/Applications/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer) --type=renderer")).toBe("codex");
@@ -66,6 +88,18 @@ describe("agent process detection", () => {
 
   it("fails closed for known process names with unsupported CLI paths", () => {
     expect(() => identifyAgent("/Synthetic Folder/bin/codex app-server", "codex")).toThrow(/Cannot confirm the agent executable location/);
+  });
+
+  it("validates the process list for empty targets without identifying irrelevant agents", async () => {
+    const output = row(300, 1, 501, "codex            /Synthetic Folder/bin/codex app-server");
+    psRunner.mockReset().mockResolvedValue({ stdout: output, stderr: "" });
+
+    await expect(findRunningAgents([], { platform: "darwin", uid: 501 })).resolves.toEqual([]);
+    expect(psRunner).toHaveBeenCalledExactlyOnceWith("/bin/ps", expect.any(Array), expect.any(Object));
+
+    psRunner.mockReset().mockResolvedValue({ stdout: output, stderr: "" });
+    await expect(findRunningAgents(["codex"], { platform: "darwin", uid: 501 }))
+      .rejects.toThrow("Cannot confirm the agent executable location; operation canceled.");
   });
 
   it("parses App paths with spaces and rejects incomplete ps output", () => {

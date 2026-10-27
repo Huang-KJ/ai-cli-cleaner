@@ -43,16 +43,16 @@ process.exitCode = await runCli(process.argv, packageMetadata.version, {
     assertDefaultDataRoots(targets);
     await stopAgents(targets);
   },
-  prepareClean: async (targets) => {
+  prepareClean: async (targets, options) => {
     assertDefaultDataRoots(targets);
     const { prepareClean } = await import("./cleaners/plan.js");
-    const plan = await prepareClean(targets, { trash: wrapOperationTrash(moveToSystemTrash), checkOpenPaths: findOpenPaths });
+    const plan = await prepareClean(targets, { ...options, trash: wrapOperationTrash(moveToSystemTrash), checkOpenPaths: findOpenPaths });
     return { ...plan, execute: () => withOperation({ kind: "clean", target: targets }, plan.execute) };
   },
-  discoverConversations: async (targets) => {
+  discoverConversations: async (targets, options) => {
     assertDefaultDataRoots(targets);
     const { discoverConversations } = await import("./conversations/discover.js");
-    return discoverConversations(targets);
+    return discoverConversations(targets, options);
   },
   deleteConversations: async (conversations, options) => {
     assertDefaultDataRoots(conversations.map((conversation) => conversation.providerId));

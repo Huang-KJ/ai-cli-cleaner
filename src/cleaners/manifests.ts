@@ -18,8 +18,6 @@ export const manifests: CleanerManifest[] = [
       "~/.codex/visualizations",
       "~/.codex/logs_2.sqlite*",
       "~/.codex/goals_1.sqlite*",
-      "~/.codex/memories_1.sqlite*",
-      "~/.codex/memories",
       "~/.codex/queue_1.sqlite*",
       "~/.codex/state_5.sqlite*",
       "~/.codex/thread_history_1.sqlite*",
@@ -27,7 +25,9 @@ export const manifests: CleanerManifest[] = [
       "~/.codex/rollout-migrations",
       "~/.codex/shell_snapshots",
       "~/.codex/..codex-global-state.json.tmp-*",
+      "~/Documents/Codex/.DS_Store",
     ],
+    memoryDeletePatterns: ["~/.codex/memories_1.sqlite*", "~/.codex/memories_v2_1.sqlite*", "~/.codex/memories"],
     datedDirectoryRoots: ["~/Documents/Codex"],
     preservedPaths: [
       "~/.codex/.codex-global-state.json",
@@ -162,11 +162,11 @@ export const manifests: CleanerManifest[] = [
     name: "Grok Build CLI",
     deletePatterns: [
       "~/.grok/sessions",
-      "~/.grok/memory",
       "~/.grok/active_sessions.json",
       "~/.grok/active_sessions.json.tmp",
       "~/.grok/active_sessions.lock"
     ],
+    memoryDeletePatterns: ["~/.grok/memory"],
     preservedPaths: [
       "~/.grok/auth.json",
       "~/.grok/config.toml",
@@ -185,16 +185,66 @@ export const manifests: CleanerManifest[] = [
       "~/.grok/agent_id",
       "~/.grok/version.json"
     ]
+  },
+  {
+    id: "claude",
+    name: "Claude Code",
+    deletePatterns: [
+      "~/.claude/history.jsonl",
+      "~/.claude/file-history",
+      "~/.claude/plans",
+      "~/.claude/debug",
+      "~/.claude/paste-cache",
+      "~/.claude/image-cache",
+      "~/.claude/uploads",
+      "~/.claude/dev-mods",
+      "~/.claude/session-env",
+      "~/.claude/sessions",
+      "~/.claude/tasks",
+      "~/.claude/todos",
+      "~/.claude/shell-snapshots",
+      "~/.claude/feedback-bundles",
+      "~/.claude/feedback/drafts",
+      "~/.claude/usage-data",
+      "~/.claude/stats-cache.json",
+      "~/.claude/statsig",
+      "~/.claude/logs"
+    ],
+    memoryDeletePatterns: ["~/.claude/agent-memory"],
+    protectedChildRoots: [{ root: "~/.claude/projects", childNames: ["memory"] }],
+    preservedPaths: [
+      "~/.claude.json",
+      "~/.claude/.credentials.json",
+      "~/.claude/CLAUDE.md",
+      "~/.claude/AGENTS.md",
+      "~/.claude/settings.json",
+      "~/.claude/settings.local.json",
+      "~/.claude/keybindings.json",
+      "~/.claude/agents",
+      "~/.claude/backups",
+      "~/.claude/commands",
+      "~/.claude/daemon",
+      "~/.claude/hooks",
+      "~/.claude/jobs",
+      "~/.claude/output-styles",
+      "~/.claude/plugins",
+      "~/.claude/rules",
+      "~/.claude/skills",
+      "~/.claude/themes",
+      "~/.claude/workflows"
+    ]
   }
 ];
 
-export function getManifests(targets?: ProviderId[]): CleanerManifest[] {
-  if (targets === undefined) {
-    return manifests;
-  }
-
-  const requested = new Set(targets);
-  return manifests.filter((manifest) => requested.has(manifest.id));
+export function getManifests(targets?: ProviderId[], options: { includeMemories?: boolean } = {}): CleanerManifest[] {
+  const requested = targets === undefined ? undefined : new Set(targets);
+  const selected = manifests.filter((manifest) => requested === undefined || requested.has(manifest.id));
+  if (!options.includeMemories) return selected;
+  return selected.map(({ memoryDeletePatterns, protectedChildRoots, ...manifest }) => ({
+    ...manifest,
+    deletePatterns: [...manifest.deletePatterns, ...(memoryDeletePatterns ?? []),
+      ...(protectedChildRoots ?? []).map(({ root }) => root)]
+  }));
 }
 
 export function getProviderName(id: ProviderId): string {
@@ -233,6 +283,7 @@ export function assertDefaultDataRoots(
   const roots: Partial<Record<ProviderId, Record<string, string>>> = {
     codex: { CODEX_HOME: path.join(home, ".codex") },
     copilot: { COPILOT_HOME: path.join(home, ".copilot") },
+    claude: { CLAUDE_CONFIG_DIR: path.join(home, ".claude") },
     opencode: {
       XDG_DATA_HOME: path.join(home, ".local", "share"),
       XDG_STATE_HOME: path.join(home, ".local", "state"),

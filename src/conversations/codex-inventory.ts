@@ -1,5 +1,5 @@
 import path from "node:path";
-import type { CodexMetadataPaths } from "./codex-paths.js";
+import { scopeCodexMetadata, type CodexMetadataPaths, type CodexMemoryOptions } from "./codex-paths.js";
 import { toError } from "./metadata-values.js";
 import { validateExactStoragePath } from "./owned-paths.js";
 import { columnNames, quoteIdentifier as quote, tableNames } from "./sqlite.js";
@@ -13,6 +13,7 @@ export interface CodexTableSchema {
   host?: string;
   optionalHost?: boolean;
   requiredId?: boolean;
+  jobKind?: "memory_stage1";
 }
 
 export interface CodexDatabaseSchema {
@@ -22,6 +23,10 @@ export interface CodexDatabaseSchema {
 
 type CodexDatabaseKey = Exclude<keyof CodexMetadataPaths, "sessionIndex" | "historyFile" | "globalStateFiles">;
 const threadTables = (names: string[]): CodexTableSchema[] => names.map((name) => ({ name, idColumns: ["thread_id"] }));
+const memoryTables: CodexTableSchema[] = [
+  ...threadTables(["stage1_outputs"]),
+  { name: "jobs", idColumns: ["job_key"], requiredId: true, jobKind: "memory_stage1" }
+];
 
 // ID 歸屬、必要欄位與本機 host 規則共用；rollout path 不當作對話 ID。
 export const codexDatabaseSchemas: Record<CodexDatabaseKey, CodexDatabaseSchema> = {
@@ -36,7 +41,8 @@ export const codexDatabaseSchemas: Record<CodexDatabaseKey, CodexDatabaseSchema>
   ]) },
   logsDatabase: { required: ["logs"], tables: threadTables(["logs"]) },
   goalsDatabase: { tables: threadTables(["thread_goal_continuation_deferrals", "thread_goals"]) },
-  memoriesDatabase: { required: ["stage1_outputs"], tables: threadTables(["stage1_outputs"]) },
+  memoriesDatabase: { required: ["stage1_outputs"], tables: memoryTables },
+  memoriesV2Database: { required: ["stage1_outputs"], tables: memoryTables },
   queueDatabase: { tables: threadTables(["queued_items", "queued_thread_revisions"]) },
   appDatabase: { tables: [
     ...threadTables(["local_thread_catalog", "thread_timeline_ledger", "local_thread_catalog_scan_entries", "live_visualization_suggestions"])
@@ -54,7 +60,10 @@ export const codexDatabaseSchemas: Record<CodexDatabaseKey, CodexDatabaseSchema>
 export const codexDatabaseEntries = Object.entries(codexDatabaseSchemas) as Array<[CodexDatabaseKey, CodexDatabaseSchema]>;
 
 export function codexRequiredColumns(table: CodexTableSchema): string[] {
-  return [...table.idColumns, ...table.requiredColumns ?? [], ...(table.host && !table.optionalHost ? [table.host] : [])];
+  return [
+    ...table.idColumns, ...table.requiredColumns ?? [],
+    ...(table.host && !table.optionalHost ? [table.host] : []), ...(table.jobKind ? ["kind"] : [])
+  ];
 }
 
 export function codexLocalHostSql(host: string): string {
@@ -65,19 +74,24 @@ export function isLocalCodexHost(host: unknown): boolean {
   return typeof host === "string" && (host === "local" || host.startsWith("local:"));
 }
 
-export async function readCodexResidualIds(home: string, paths: CodexMetadataPaths): Promise<{
+export async function readCodexResidualIds(
+  home: string,
+  paths: CodexMetadataPaths,
+  options: CodexMemoryOptions = {}
+): Promise<{
   ids: string[];
   warnings: string[];
   disabledReason?: string;
 }> {
   const root = path.join(home, ".codex");
+  const scoped = scopeCodexMetadata(paths, options);
   const ids = new Set<string>();
   const warnings: string[] = [];
   const addIssue = (file: string, error: unknown): void => {
     warnings.push(`Codex: cannot fully validate conversation index ${file}; deletion disabled: ${toError(error).message}`);
   };
   for (const [key, spec] of codexDatabaseEntries) {
-    const file = paths[key];
+    const file = scoped[key];
     if (typeof file !== "string") continue;
     try {
       const relative = path.relative(root, file).split(path.sep);
@@ -102,7 +116,7 @@ export async function readCodexResidualIds(home: string, paths: CodexMetadataPat
             }
             const host = table.host && columns.has(table.host) ? table.host : undefined;
             for (const column of table.idColumns) {
-              const scope = host ? ` AND ${codexLocalHostSql(host)}` : "";
+              const scope = `${host ? ` AND ${codexLocalHostSql(host)}` : ""}${table.jobKind ? " AND kind = 'memory_stage1'" : ""}`;
               const condition = table.requiredId ? "1" : `${quote(column)} IS NOT NULL`;
               const rows = database.prepare(`SELECT DISTINCT ${quote(column)} AS id FROM ${quote(table.name)} WHERE ${condition}${scope}`);
               rows.setReadBigInts(true);
