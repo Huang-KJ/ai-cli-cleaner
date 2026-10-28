@@ -13,6 +13,10 @@ describe("AI Agent cleaner manifests", () => {
     expect(() => assertDefaultDataRoots(["opencode"], { XDG_DATA_HOME: "/external" }, "/fixture")).toThrow(/XDG_DATA_HOME/);
     expect(() => assertDefaultDataRoots(["claude"], { CLAUDE_CONFIG_DIR: "/external" }, "/fixture")).toThrow(/CLAUDE_CONFIG_DIR/);
     expect(() => assertDefaultDataRoots(["claude"], { CLAUDE_CONFIG_DIR: "/fixture/.claude/" }, "/fixture")).not.toThrow();
+    expect(() => assertDefaultDataRoots(["claude"], { CLAUDE_USER_DATA_DIR: "/external" }, "/fixture")).toThrow(/CLAUDE_USER_DATA_DIR/);
+    expect(() => assertDefaultDataRoots(["claude"], { CLAUDE_USER_DATA_DIR: "/fixture/Library/Application Support/Claude/" }, "/fixture")).not.toThrow();
+    expect(() => assertDefaultDataRoots(["claude"], { CLAUDE_USER_DATA_DIR: "/fixture/Library/Application Support/Claude-3p" }, "/fixture")).not.toThrow();
+    expect(() => assertDefaultDataRoots(["copilot"], { CLAUDE_USER_DATA_DIR: "/external" }, "/fixture")).not.toThrow();
     expect(() => assertDefaultDataRoots(["copilot"], { CODEX_HOME: "/custom" }, "/fixture")).not.toThrow();
     expect(() => assertDefaultDataRoots(["codex"], { CODEX_HOME: "/fixture/.codex/" }, "/fixture")).not.toThrow();
   });

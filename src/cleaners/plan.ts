@@ -7,6 +7,7 @@ import { codexConversationMetadataPaths, prepareCodexConversationMetadata } from
 import { assertKnownCodexDatabases } from "../conversations/codex-paths.js";
 import { attachMetadataFailure } from "../conversations/metadata-safety.js";
 import { prepareOpenCodeBulkMetadata } from "../conversations/opencode-bulk.js";
+import { prepareClaudeDesktop } from "../conversations/claude-desktop.js";
 
 export interface CleanPlan {
   entries: ScanEntry[];
@@ -30,19 +31,22 @@ export async function prepareClean(
     ? await prepareCodexConversationMetadata(home, options.trash, memoryOptions)
     : undefined;
   if (metadata) await assertKnownCodexDatabases(home);
+  const claude = targets.includes("claude") ? await prepareClaudeDesktop(home) : undefined;
   // 預檢只操作私有副本；搬移清單仍依來源當下的資料庫及 sidecar 建立。
   const scanned = await scanManifests(manifests, { home });
   const errors = scanned.filter((entry) => entry.error);
   if (errors.length) throw new Error(errors.map((entry) => `${entry.path}: ${entry.error!.message}`).join("\n"));
   const retainedPaths = new Set(openCode?.retainDatabase ? openCode.paths : []);
-  const entries = scanned.filter((entry) => entry.exists && !retainedPaths.has(entry.path));
+  const baseEntries = scanned.filter((entry) => entry.exists && !retainedPaths.has(entry.path));
+  const entries = [...baseEntries, ...(claude?.entries ?? [])];
   const guardPaths = [...new Set([
     ...entries.map((entry) => entry.path),
     ...(metadata ? codexConversationMetadataPaths(home, memoryOptions) : []),
-    ...(openCode?.paths ?? [])
+    ...(openCode?.paths ?? []),
+    ...(claude?.paths ?? [])
   ])];
   const checkClosed = async (): Promise<void> => {
-    if (!entries.length && !metadata?.operations.length && !openCode?.operations.length) return;
+    if (!entries.length && !metadata?.operations.length && !openCode?.operations.length && !claude?.paths.length) return;
     const check = await options.checkOpenPaths(guardPaths);
     if (!check.supported) throw new Error("Cannot check open-file status; ensure lsof is available and close the relevant agents, then retry.");
     if (check.openPaths.length) throw new Error(
@@ -63,13 +67,14 @@ export async function prepareClean(
       if (metadata) await assertKnownCodexDatabases(home);
       await metadata?.validate();
       await openCode?.validate();
+      await claude?.validate();
       // 重新確認整份清單，包含預覽時尚不存在的路徑與 wildcard 新增項目。
       const current = await scanManifests(manifests, { home });
       const currentErrors = current.filter((entry) => entry.error);
       if (currentErrors.length) {
         throw new Error(currentErrors.map((entry) => `${entry.path}: ${entry.error!.message}`).join("\n"));
       }
-      const plannedPaths = new Set(entries.map((entry) => `${entry.providerId}\0${entry.path}`));
+      const plannedPaths = new Set(baseEntries.map((entry) => `${entry.providerId}\0${entry.path}`));
       const currentPaths = new Set(current.filter((entry) => entry.exists && !retainedPaths.has(entry.path))
         .map((entry) => `${entry.providerId}\0${entry.path}`));
       if (plannedPaths.size !== currentPaths.size ||
@@ -84,7 +89,7 @@ export async function prepareClean(
       const failures: Awaited<ReturnType<CleanPlan["execute"]>>["failures"] = [];
 
       for (const manifest of manifests) {
-        const selected = entries.filter((entry) => entry.providerId === manifest.id);
+        const selected = baseEntries.filter((entry) => entry.providerId === manifest.id);
         try {
           if (manifest.id === "opencode") await openCode?.validate();
           const result = await cleanEntries(selected, {
@@ -109,6 +114,24 @@ export async function prepareClean(
             if (!current.supported || current.openPaths.length) throw new Error("OpenCode indexes are open or their open-file status cannot be checked; updates stopped.");
             await openCode.execute();
             await openCode.assertComplete();
+          }
+          if (manifest.id === "claude" && claude) {
+            // 對話清理成功後才移除桌面清單，避免留下無法從介面找到的對話。
+            await checkClosed();
+            await claude.validate();
+            const desktop = await cleanEntries(claude.entries, {
+              checkOpenPaths: options.checkOpenPaths,
+              trash: async (paths, expected) => {
+                await claude.validateFiles(paths);
+                await options.trash(paths, expected);
+              }
+            });
+            deleted.push(...desktop.deleted);
+            if (desktop.failures.length || desktop.scanErrors.length) {
+              throw new Error([...desktop.failures.map((failure) => failure.error.message),
+                ...desktop.scanErrors.map((entry) => entry.error?.message)].filter(Boolean).join("\n"));
+            }
+            await claude.assertComplete();
           }
           // 成功必須以實際路徑消失為準，避免 helper 無動作卻回報完成。
           const remaining = await scanManifests([manifest], { home });

@@ -280,10 +280,13 @@ export function assertDefaultDataRoots(
   environment: NodeJS.ProcessEnv = process.env,
   home = homedir()
 ): void {
-  const roots: Partial<Record<ProviderId, Record<string, string>>> = {
+  const roots: Partial<Record<ProviderId, Record<string, string | string[]>>> = {
     codex: { CODEX_HOME: path.join(home, ".codex") },
     copilot: { COPILOT_HOME: path.join(home, ".copilot") },
-    claude: { CLAUDE_CONFIG_DIR: path.join(home, ".claude") },
+    claude: {
+      CLAUDE_CONFIG_DIR: path.join(home, ".claude"),
+      CLAUDE_USER_DATA_DIR: ["Claude", "Claude-3p"].map((name) => path.join(home, "Library", "Application Support", name))
+    },
     opencode: {
       XDG_DATA_HOME: path.join(home, ".local", "share"),
       XDG_STATE_HOME: path.join(home, ".local", "state"),
@@ -293,7 +296,8 @@ export function assertDefaultDataRoots(
   for (const target of new Set(targets)) {
     for (const [name, expected] of Object.entries(roots[target] ?? {})) {
       const value = environment[name];
-      if (value && (!path.isAbsolute(value) || path.resolve(value) !== expected)) {
+      const allowed = Array.isArray(expected) ? expected : [expected];
+      if (value && (!path.isAbsolute(value) || !allowed.includes(path.resolve(value)))) {
         throw new Error(
           `Only the default ${target} data directory is supported. A custom ${name} was detected; cleanup stopped to avoid deleting the wrong location.`
         );

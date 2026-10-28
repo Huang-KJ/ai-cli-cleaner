@@ -382,7 +382,7 @@ function cleanScope(targets: ProviderId[], includeMemories: boolean): string {
     antigravity: "Antigravity: conversations, indexes, brain, working files, generated HTML, and caches",
     opencode: "OpenCode: conversation databases, storage, project snapshots, and prompt history",
     grok: `Grok: conversations, ${includeMemories ? "memories, " : ""}and the active conversation index`,
-    claude: `Claude Code: conversations, prompt history, ${includeMemories ? "project and subagent memories, " : ""}file snapshots, plans, tasks, attachments, session state, shell snapshots, logs, and usage/feedback data`
+    claude: `Claude Code: conversations, supported local Desktop Code sidebar records, prompt history, ${includeMemories ? "project and subagent memories, " : ""}file snapshots, plans, tasks, attachments, session state, shell snapshots, logs, and usage/feedback data`
   };
   return targets.map((target) => scopes[target]).join("; ");
 }

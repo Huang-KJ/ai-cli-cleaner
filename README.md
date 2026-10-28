@@ -65,7 +65,7 @@ The default retains Codex's memory databases and `memories/`, Grok's `memory/`, 
 | Google Antigravity CLI / IDE | `antigravity` | Blocked when either shared protobuf summary is nonempty | Includes both known CLI and IDE roots |
 | OpenCode | `opencode` | Supported SQLite formats | Preserves supported account/configuration data in mixed databases |
 | Grok Build CLI | `grok` | Supported sessions and indexes | Local history; memories only with `--include-memories` |
-| Claude Code | `claude` | Preview only; use full cleanup to delete | Local history and artifacts; memories only with `--include-memories` |
+| Claude Code | `claude` | Preview only; use full cleanup to delete | Local history, artifacts, and supported Desktop Code sidebar records; memories only with `--include-memories` |
 
 Support depends on storage format and ownership checks. [Compatibility](docs/compatibility.md) defines validation cases, roots, legacy storage, and refusals; desktop GUI behavior and cloud models are outside those CLI cases. When Antigravity's shared summaries block individual deletion, use its built-in `/resume` interface. OpenCode legacy JSON supports full cleanup of known conversation subdirectories, but not selected deletion.
 
