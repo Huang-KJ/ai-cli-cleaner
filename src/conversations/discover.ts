@@ -234,9 +234,10 @@ async function discoverCodex(
     }
   }
 
-  if (metadata.appDatabase && await isNormalCodexFile(root, metadata.appDatabase, warnings)) {
+  for (const appDatabase of [metadata.appDatabase, metadata.devAppDatabase]) {
+    if (!appDatabase || !await isNormalCodexFile(root, appDatabase, warnings)) continue;
     try {
-      await withPrivateReadDatabase(home, root, metadata.appDatabase, (database) => {
+      await withPrivateReadDatabase(home, root, appDatabase, (database) => {
         for (const table of ["local_thread_catalog", "thread_timeline_ledger", "local_thread_catalog_scan_entries", "live_visualization_suggestions"]) {
           if (!tableExists(database, table)) continue;
           const columns = columnNames(database, table);

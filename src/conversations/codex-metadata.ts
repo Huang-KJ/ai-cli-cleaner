@@ -143,8 +143,11 @@ export async function prepareCodexConversationMetadata(
   const paths: CodexPlanPaths = {
     globalStateFiles: sourcePaths.globalStateFiles,
     appDatabase: sourcePaths.appDatabase,
+    devAppDatabase: sourcePaths.devAppDatabase,
     threadSummariesDatabase: sourcePaths.threadSummariesDatabase,
-    historySnapshotsDatabase: sourcePaths.historySnapshotsDatabase
+    devThreadSummariesDatabase: sourcePaths.devThreadSummariesDatabase,
+    historySnapshotsDatabase: sourcePaths.historySnapshotsDatabase,
+    devHistorySnapshotsDatabase: sourcePaths.devHistorySnapshotsDatabase
   };
   const plan = await prepareCodexPlan(
     home,
@@ -241,8 +244,11 @@ function mapCodexPaths(paths: CodexPlanPaths, copies: Map<string, string>): Code
     memoriesV2Database: optional(paths.memoriesV2Database),
     queueDatabase: optional(paths.queueDatabase),
     appDatabase: optional(paths.appDatabase),
+    devAppDatabase: optional(paths.devAppDatabase),
     threadSummariesDatabase: optional(paths.threadSummariesDatabase),
-    historySnapshotsDatabase: optional(paths.historySnapshotsDatabase)
+    devThreadSummariesDatabase: optional(paths.devThreadSummariesDatabase),
+    historySnapshotsDatabase: optional(paths.historySnapshotsDatabase),
+    devHistorySnapshotsDatabase: optional(paths.devHistorySnapshotsDatabase)
   };
 }
 

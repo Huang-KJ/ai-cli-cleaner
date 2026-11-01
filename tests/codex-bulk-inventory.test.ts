@@ -184,7 +184,9 @@ describe("Codex bulk residual inventory", () => {
 
   it.each([
     ["sqlite/codex-thread-summaries-dev.db", "thread_turn_summaries", "host_key"],
-    ["sqlite/codex-history-snapshots-dev.db", "app_server_history_snapshots", "host_id"]
+    ["sqlite/codex-history-snapshots-dev.db", "app_server_history_snapshots", "host_id"],
+    ["sqlite/codex-thread-summaries.db", "thread_turn_summaries", "host_key"],
+    ["sqlite/codex-history-snapshots.db", "app_server_history_snapshots", "host_id"]
   ] as const)("removes orphan local %s rows and keeps remote rows/settings", async (file, table, host) => {
     const fixture = await makeFixture();
     const target = path.join(fixture.root, file);
@@ -231,6 +233,48 @@ describe("Codex bulk residual inventory", () => {
         { thread_id: "remote-only", host_id: "ssh:fixture" }
       ]);
     } finally { retained.close(); }
+    expect(JSON.parse(await fs.readFile(fixture.global, "utf8"))).toEqual({
+      "pinned-thread-ids": ["remote-only"], theme: "dark"
+    });
+  });
+
+  it("cleans production and dev App databases side by side in WAL mode", async () => {
+    const fixture = await makeFixture();
+    const targets = ["codex.db", "codex-dev.db"].map((name) => path.join(fixture.root, "sqlite", name));
+    await fs.mkdir(path.dirname(targets[0]!), { recursive: true });
+    for (const [index, target] of targets.entries()) {
+      // 模擬強制停止後殘留的 WAL：開啟期間複製主檔與 sidecar，資料只存在 -wal 內。
+      const source = path.join(fixture.home, `fixture-source-${index}.db`);
+      const database = new DatabaseSync(source);
+      try {
+        database.exec(`PRAGMA journal_mode = WAL; PRAGMA wal_autocheckpoint = 0;
+          CREATE TABLE local_thread_catalog(thread_id TEXT, host_id TEXT);
+          INSERT INTO local_thread_catalog VALUES('selected', 'local'), ('remote-only', 'ssh:fixture')`);
+        // nested 只存在於開發版資料庫，確認兩個資料庫都會提供可清除的 ID。
+        if (index === 1) database.exec("INSERT INTO local_thread_catalog VALUES('nested', 'local:fixture')");
+        // 正式版另有 ChatGPT 對話的暫存表；不屬 Codex 對話，必須原樣保留。
+        if (index === 0) database.exec(`CREATE TABLE active_chat_turns(profile TEXT, account_id TEXT, user_id TEXT,
+            thread_id TEXT, launch_id TEXT, observed_at_ms INTEGER);
+          INSERT INTO active_chat_turns VALUES('profile', 'account', 'user', 'chat', 'launch', 1)`);
+        for (const suffix of ["", "-wal", "-shm"]) await fs.copyFile(`${source}${suffix}`, `${target}${suffix}`);
+      } finally { database.close(); }
+    }
+    const result = await (await prepareClean(["codex"], {
+      home: fixture.home, checkOpenPaths: closed, trash: fixture.move
+    })).execute();
+    expect(result.failures).toEqual([]);
+    for (const target of targets) {
+      const retained = new DatabaseSync(target, { readOnly: true });
+      try {
+        expect(retained.prepare("SELECT * FROM local_thread_catalog").all()).toEqual([
+          { thread_id: "remote-only", host_id: "ssh:fixture" }
+        ]);
+      } finally { retained.close(); }
+    }
+    const production = new DatabaseSync(targets[0]!, { readOnly: true });
+    try {
+      expect(production.prepare("SELECT thread_id FROM active_chat_turns").all()).toEqual([{ thread_id: "chat" }]);
+    } finally { production.close(); }
     expect(JSON.parse(await fs.readFile(fixture.global, "utf8"))).toEqual({
       "pinned-thread-ids": ["remote-only"], theme: "dark"
     });

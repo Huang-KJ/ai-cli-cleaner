@@ -27,7 +27,9 @@ const sources = [
   ["queue_1.sqlite", "queued_items"],
   ["queue_1.sqlite", "queued_thread_revisions"],
   ["sqlite/codex-dev.db", "automation_runs"],
-  ["sqlite/codex-dev.db", "inbox_items"]
+  ["sqlite/codex-dev.db", "inbox_items"],
+  ["sqlite/codex.db", "automation_runs"],
+  ["sqlite/codex.db", "inbox_items"]
 ] as const;
 
 describe("Codex auxiliary metadata-only inventory", () => {
@@ -207,7 +209,9 @@ describe("Codex auxiliary metadata-only inventory", () => {
 
   it.each([
     ["sqlite/codex-thread-summaries-dev.db", "thread_turn_summaries", "host_key"],
-    ["sqlite/codex-history-snapshots-dev.db", "app_server_history_snapshots", "host_id"]
+    ["sqlite/codex-history-snapshots-dev.db", "app_server_history_snapshots", "host_id"],
+    ["sqlite/codex-thread-summaries.db", "thread_turn_summaries", "host_key"],
+    ["sqlite/codex-history-snapshots.db", "app_server_history_snapshots", "host_id"]
   ] as const)("excludes remote-only IDs and preserves remote rows in %s", async (file, table, host) => {
     const home = await makeHome();
     const database = await makeDatabase(home, file);
@@ -255,7 +259,7 @@ describe("Codex auxiliary metadata-only inventory", () => {
     }
   );
 
-  it.each(["thread_history_1.sqlite", "goals_1.sqlite", "queue_1.sqlite", "sqlite/codex-dev.db"])(
+  it.each(["thread_history_1.sqlite", "goals_1.sqlite", "queue_1.sqlite", "sqlite/codex-dev.db", "sqlite/codex.db"])(
     "refuses an unknown table layout in %s without modifying safe inventory", async (file) => {
       const home = await makeHome();
       const history = path.join(home, ".codex", "history.jsonl");

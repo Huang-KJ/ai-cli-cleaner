@@ -16,7 +16,10 @@ async function fixture() {
 }
 
 describe("Codex database format boundary", () => {
-  it.each(["new_series_1.sqlite", "memories_v2_2.sqlite", "sqlite/codex-prod.db", "sqlite/new.db-wal", "sqlite/v2/new.db"])(
+  it.each([
+    "new_series_1.sqlite", "memories_v2_2.sqlite", "sqlite/codex-prod.db", "sqlite/new.db-wal", "sqlite/v2/new.db",
+    "sqlite/codex-thread-summaries-nightly.db", "sqlite/codex-history-snapshots-beta.db"
+  ])(
     "rejects unrecognised database storage %s before changing any data", async (relative) => {
       const home = await fixture();
       const file = path.join(home, ".codex", relative);
@@ -32,7 +35,9 @@ describe("Codex database format boundary", () => {
     for (const file of [
       "state_5.sqlite", "state_5.sqlite-wal", "memories_v2_1.sqlite", "memories_v2_1.sqlite-shm",
       "memories_v2_1.sqlite-wal", "memories_v2_1.sqlite-journal", "config.toml",
-      "sqlite/codex-dev.db", "sqlite/codex-dev.db-shm"
+      "sqlite/codex-dev.db", "sqlite/codex-dev.db-shm",
+      "sqlite/codex.db", "sqlite/codex.db-wal", "sqlite/codex.db-shm",
+      "sqlite/codex-thread-summaries.db", "sqlite/codex-history-snapshots.db"
     ]) {
       await fs.writeFile(path.join(home, ".codex", file), "fixture");
     }

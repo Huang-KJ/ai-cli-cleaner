@@ -27,6 +27,17 @@ const memoryTables: CodexTableSchema[] = [
   ...threadTables(["stage1_outputs"]),
   { name: "jobs", idColumns: ["job_key"], requiredId: true, jobKind: "memory_stage1" }
 ];
+const appSchema: CodexDatabaseSchema = { tables: [
+  ...threadTables(["local_thread_catalog", "thread_timeline_ledger", "local_thread_catalog_scan_entries", "live_visualization_suggestions"])
+    .map((table) => ({ ...table, host: "host_id", optionalHost: true })),
+  ...threadTables(["automation_runs", "inbox_items"])
+] };
+const threadSummariesSchema: CodexDatabaseSchema = { required: ["thread_turn_summaries"], tables: [
+  { name: "thread_turn_summaries", idColumns: ["thread_id"], host: "host_key" }
+] };
+const historySnapshotsSchema: CodexDatabaseSchema = { required: ["app_server_history_snapshots"], tables: [
+  { name: "app_server_history_snapshots", idColumns: ["thread_id"], host: "host_id" }
+] };
 
 // ID 歸屬、必要欄位與本機 host 規則共用；rollout path 不當作對話 ID。
 export const codexDatabaseSchemas: Record<CodexDatabaseKey, CodexDatabaseSchema> = {
@@ -44,17 +55,12 @@ export const codexDatabaseSchemas: Record<CodexDatabaseKey, CodexDatabaseSchema>
   memoriesDatabase: { required: ["stage1_outputs"], tables: memoryTables },
   memoriesV2Database: { required: ["stage1_outputs"], tables: memoryTables },
   queueDatabase: { tables: threadTables(["queued_items", "queued_thread_revisions"]) },
-  appDatabase: { tables: [
-    ...threadTables(["local_thread_catalog", "thread_timeline_ledger", "local_thread_catalog_scan_entries", "live_visualization_suggestions"])
-      .map((table) => ({ ...table, host: "host_id", optionalHost: true })),
-    ...threadTables(["automation_runs", "inbox_items"])
-  ] },
-  threadSummariesDatabase: { required: ["thread_turn_summaries"], tables: [
-    { name: "thread_turn_summaries", idColumns: ["thread_id"], host: "host_key" }
-  ] },
-  historySnapshotsDatabase: { required: ["app_server_history_snapshots"], tables: [
-    { name: "app_server_history_snapshots", idColumns: ["thread_id"], host: "host_id" }
-  ] }
+  appDatabase: appSchema,
+  devAppDatabase: appSchema,
+  threadSummariesDatabase: threadSummariesSchema,
+  devThreadSummariesDatabase: threadSummariesSchema,
+  historySnapshotsDatabase: historySnapshotsSchema,
+  devHistorySnapshotsDatabase: historySnapshotsSchema
 };
 
 export const codexDatabaseEntries = Object.entries(codexDatabaseSchemas) as Array<[CodexDatabaseKey, CodexDatabaseSchema]>;

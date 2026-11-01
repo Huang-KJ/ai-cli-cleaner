@@ -14,8 +14,11 @@ export interface CodexMetadataPaths {
   memoriesV2Database?: string;
   queueDatabase?: string;
   appDatabase?: string;
+  devAppDatabase?: string;
   threadSummariesDatabase?: string;
+  devThreadSummariesDatabase?: string;
   historySnapshotsDatabase?: string;
+  devHistorySnapshotsDatabase?: string;
 }
 
 export interface CodexMemoryOptions {
@@ -51,9 +54,13 @@ export function getCodexMetadataPaths(home: string, options: CodexMemoryOptions 
       memoriesV2Database: path.join(root, "memories_v2_1.sqlite")
     } : {}),
     queueDatabase: path.join(root, "queue_1.sqlite"),
-    appDatabase: path.join(root, "sqlite", "codex-dev.db"),
-    threadSummariesDatabase: path.join(root, "sqlite", "codex-thread-summaries-dev.db"),
-    historySnapshotsDatabase: path.join(root, "sqlite", "codex-history-snapshots-dev.db")
+    // App 依 BUILD_FLAVOR 命名：正式版無後綴，開發版加 -dev；兩者可能同時存在。
+    appDatabase: path.join(root, "sqlite", "codex.db"),
+    devAppDatabase: path.join(root, "sqlite", "codex-dev.db"),
+    threadSummariesDatabase: path.join(root, "sqlite", "codex-thread-summaries.db"),
+    devThreadSummariesDatabase: path.join(root, "sqlite", "codex-thread-summaries-dev.db"),
+    historySnapshotsDatabase: path.join(root, "sqlite", "codex-history-snapshots.db"),
+    devHistorySnapshotsDatabase: path.join(root, "sqlite", "codex-history-snapshots-dev.db")
   };
 }
 
@@ -70,8 +77,11 @@ export function codexMetadataFiles(paths: Partial<CodexMetadataPaths>): string[]
     paths.memoriesV2Database,
     paths.queueDatabase,
     paths.appDatabase,
+    paths.devAppDatabase,
     paths.threadSummariesDatabase,
-    paths.historySnapshotsDatabase
+    paths.devThreadSummariesDatabase,
+    paths.historySnapshotsDatabase,
+    paths.devHistorySnapshotsDatabase
   ].filter((file): file is string => Boolean(file));
 }
 
