@@ -62,8 +62,13 @@ function capture(directory: string, anchors: Anchors, privateRoot: string, trust
   }
 }
 
+// 每次使用前核對固定的原生 claim 產物與來源雜湊。
+export function claimHelperBinary(): string {
+  return verifyClaimArtifact(fileURLToPath(new URL("../../", import.meta.url)));
+}
+
 async function run(request: Record<string, unknown>, directory: string): Promise<void> {
-  const binary = verifyClaimArtifact(fileURLToPath(new URL("../../", import.meta.url)));
+  const binary = claimHelperBinary();
   const input = JSON.stringify(request);
   await new Promise<void>((resolve, reject) => {
     const child = execFile(binary, [], { env: toolEnvironment(), timeout: 60_000, killSignal: "SIGKILL", maxBuffer: 1024 * 1024 }, (error, _stdout, stderr) => {

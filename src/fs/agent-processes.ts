@@ -29,6 +29,20 @@ export interface StopAgentOptions {
   sleep?: (ms: number) => Promise<void>;
 }
 
+// 記錄無法確認的程序可能所屬的 provider，讓檢查只阻擋相關代理。
+export class AgentIdentityError extends Error {
+  constructor(message: string, readonly providers: readonly ProviderId[]) {
+    super(message);
+    this.name = "AgentIdentityError";
+  }
+}
+
+const nodeAgentScripts: [ProviderId, RegExp][] = [
+  ["codex", /\/node_modules\/@openai\/codex\/bin\/codex\.js(?:\s|$)/],
+  ["copilot", /\/node_modules\/@github\/copilot\/dist\/cli\.js(?:\s|$)/],
+  ["claude", /\/node_modules\/@anthropic-ai\/claude-code\/cli\.js(?:\s|$)/]
+];
+
 export function parseAgentProcesses(output: string, hasAccounting = false): AgentProcess[] {
   const processes: AgentProcess[] = [];
   for (const line of output.split("\n")) {
@@ -54,9 +68,12 @@ export function identifyAgent(command: string, accounting?: string): ProviderId 
   if (accounting !== undefined) {
     const nativeClaude = /^\/[^\r\n]*\/\.local\/share\/claude\/versions\/(\d+\.\d+\.\d+(?:-[\w.-]+)?)(?:\s|$)/.exec(command)?.[1];
     if (nativeClaude && accounting === nativeClaude) return "claude";
+    // 原生安裝經 ~/.local/bin/claude 連結啟動時，kernel 會計名稱取自實際版本檔名，argv0 仍是 claude。
+    if (/^\d+\.\d+\.\d+(?:-[\w.-]+)?$/.test(accounting) &&
+        /^(?:claude|\/[^\r\n]*\/\.local\/bin\/claude)(?:\s|$)/.test(command)) return "claude";
     // argv0 與 comm 都可偽造；先以 kernel 會計名稱限制 provider，再放寬 App 前綴空格。
     const provider = /^(?:ChatGPT$|Codex(?: |$)|codex(?:-|$))/.test(accounting) ? "codex"
-      : /^(?:Antigravity(?: |$)|antigravity$)/.test(accounting) ? "antigravity"
+      : /^(?:Antigravity(?: |$)|antigravity$|agy$)/.test(accounting) ? "antigravity"
         : /^(?:OpenCode(?: |$)|opencode$)/.test(accounting) ? "opencode"
           : /^(?:Grok(?: |$)|grok(?:-|$))/.test(accounting) ? "grok"
             : /^(?:Copilot(?: |$)|copilot$)/.test(accounting) ? "copilot"
@@ -68,18 +85,25 @@ export function identifyAgent(command: string, accounting?: string): ProviderId 
       if (/^(?:\S*\/)?node\s+\S*\/node_modules\/@github\/copilot\/dist\/cli\.js(?:\s|$)/.test(command)) return "copilot";
       if (/^(?:\S*\/)?node\s+\S*\/node_modules\/@anthropic-ai\/claude-code\/cli\.js(?:\s|$)/.test(command)) return "claude";
       const script = /^(?:\S*\/)?node\s+(\S+)/.exec(command)?.[1];
-      if (/\/node_modules\/(?:@openai\/codex\/bin\/codex\.js|@github\/copilot\/dist\/cli\.js|@anthropic-ai\/claude-code\/cli\.js)(?:\s|$)/.test(command) &&
-          (!script || !/\.[cm]?js$/.test(script))) {
-        throw new Error("Cannot determine the Node agent script boundary; operation canceled.");
+      const mentioned = nodeAgentScripts.filter(([, pattern]) => pattern.test(command)).map(([id]) => id);
+      if (mentioned.length && (!script || !/\.[cm]?js$/.test(script))) {
+        throw new AgentIdentityError("Cannot determine the Node agent script boundary; operation canceled.", mentioned);
       }
       return undefined;
     }
+    // Antigravity IDE 沿用 Electron 預設執行檔名；language server 由 App bundle 內的固定路徑啟動。
+    if ((accounting === "Electron" && /^\/[^\r\n]*\/Antigravity IDE\.app\/Contents\/MacOS\/Electron(?:\s|$)/.test(command)) ||
+        (accounting === "language_server" &&
+          /^\/[^\r\n]*\/Antigravity(?: IDE)?\.app\/Contents\/Resources\/bin\/language_server(?:\s|$)/.test(command))) return "antigravity";
     if (!provider) return undefined;
     if (provider === "codex" && (/^\/[^\r\n]*\/Codex\.app\/Contents\//.test(command) ||
         /^\/[^\r\n]*\/ChatGPT\.app\/Contents\/(?:MacOS\/ChatGPT(?:\s|$)|Frameworks\/Codex Framework\.framework\/|Resources\/codex-cli\/)/.test(command))) return provider;
-    const app = { antigravity: "Antigravity", opencode: "OpenCode", grok: "Grok", copilot: "Copilot", claude: "Claude" }[provider as Exclude<ProviderId, "codex">];
+    // Claude Desktop 內建的 Claude Code CLI 依版本與 build 雜湊放在 Application Support。
+    if (provider === "claude" && accounting === "claude" &&
+        /^\/[^\r\n]*\/Library\/Application Support\/Claude(?:-3p)?\/claude-code\/\d+\.\d+\.\d+(?:-[\w.-]+)?\/[0-9a-f]+\/claude\.app\/Contents\/MacOS\/claude(?:\s|$)/.test(command)) return provider;
+    const app = { antigravity: "Antigravity(?: IDE)?", opencode: "OpenCode", grok: "Grok", copilot: "Copilot", claude: "Claude" }[provider as Exclude<ProviderId, "codex">];
     if (app && new RegExp(`^/[^\\r\\n]*/${app}\\.app/Contents/`).test(command)) return provider;
-    throw new Error("Cannot confirm the agent executable location; operation canceled.");
+    throw new AgentIdentityError("Cannot confirm the agent executable location; operation canceled.", [provider]);
   }
   // 僅辨識實際執行檔位置；參數或 shell 指令提到代理名稱不算。
   if (/^\S*\/Codex\.app\/Contents\//.test(command) ||
@@ -88,7 +112,7 @@ export function identifyAgent(command: string, accounting?: string): ProviderId 
       /^\S*\/codex-code-mode-host(?:\s|$)/.test(command) ||
       /^(?:\S*\/)?node\s+\S*\/node_modules\/@openai\/codex\/bin\/codex\.js(?:\s|$)/.test(command)) return "codex";
   if (/^\S*\/Antigravity\.app\/Contents\//.test(command) ||
-      /^(?:\S*\/)?antigravity(?:\s|$)/.test(command)) return "antigravity";
+      /^(?:\S*\/)?(?:antigravity|agy)(?:\s|$)/.test(command)) return "antigravity";
   if (/^\S*\/OpenCode\.app\/Contents\//.test(command) ||
       /^(?:\S*\/)?opencode(?:\s|$)/.test(command)) return "opencode";
   if (/^\S*\/Grok\.app\/Contents\//.test(command) ||
@@ -131,10 +155,20 @@ export async function findRunningAgents(
   if (selected.size === 0) return [];
   return processes.flatMap((item) => {
     if (item.uid !== uid) return [];
-    const providerId = identifyAgent(item.command, item.accounting);
-    return providerId && selected.has(providerId)
-      ? [{ pid: item.pid, providerId }] : [];
+    const providerId = identifySelectedAgent(item, selected);
+    return providerId ? [{ pid: item.pid, providerId }] : [];
   });
+}
+
+// 無法確認的程序仍讓其可能所屬的代理 fail closed；未選取的代理不受影響。
+function identifySelectedAgent(item: AgentProcess, selected: ReadonlySet<ProviderId>): ProviderId | undefined {
+  try {
+    const providerId = identifyAgent(item.command, item.accounting);
+    return providerId && selected.has(providerId) ? providerId : undefined;
+  } catch (error) {
+    if (error instanceof AgentIdentityError && !error.providers.some((id) => selected.has(id))) return undefined;
+    throw error;
+  }
 }
 
 export async function assertAgentsStopped(
@@ -170,9 +204,8 @@ export async function stopAgents(
   const byPid = new Map(initial.map((item) => [item.pid, item]));
   if (!byPid.has(selfPid)) throw new Error("Cannot determine the cleaner's process relationships; stopping agents canceled.");
   const candidates = initial.filter((item) => item.uid === uid)
-    .map((item) => ({ item, providerId: identifyAgent(item.command, item.accounting) }))
-    .filter((entry): entry is { item: AgentProcess; providerId: ProviderId } =>
-      entry.item.uid === uid && entry.providerId !== undefined && chosen.has(entry.providerId));
+    .map((item) => ({ item, providerId: identifySelectedAgent(item, chosen) }))
+    .filter((entry): entry is { item: AgentProcess; providerId: ProviderId } => entry.providerId !== undefined);
   const selected = new Set(candidates.map((entry) => entry.item.pid));
 
   let ancestor: AgentProcess | undefined = byPid.get(selfPid);
@@ -213,11 +246,7 @@ export async function stopAgents(
   if (alive.length > 0) {
     throw new Error(`Agents are still running; cleanup canceled. PIDs: ${alive.map((item) => item.pid).join(", ")}`);
   }
-  const remaining = (await readPs()).filter((item) => {
-    if (item.uid !== uid) return false;
-    const providerId = identifyAgent(item.command, item.accounting);
-    return providerId !== undefined && chosen.has(providerId);
-  });
+  const remaining = (await readPs()).filter((item) => item.uid === uid && identifySelectedAgent(item, chosen) !== undefined);
   if (remaining.length > 0) {
     throw new Error(`Agents restarted or are still running; cleanup canceled. PIDs: ${remaining.map((item) => item.pid).join(", ")}`);
   }

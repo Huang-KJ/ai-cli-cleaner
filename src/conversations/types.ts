@@ -62,7 +62,6 @@ export interface ConversationDeleteResult {
   deleted: ConversationRecord[];
   previewed: ConversationRecord[];
   failures: ConversationDeleteFailure[];
-  openFileCheckUnsupported?: boolean;
 }
 
 export interface DeleteConversationOptions {

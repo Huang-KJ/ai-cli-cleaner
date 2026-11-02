@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ConversationRecord } from "../src/conversations/types.js";
-import { displayText } from "../src/ui/display.js";
+import { displayText, formatBytes } from "../src/ui/display.js";
 import { createCliTestFixture, runCliCommand } from "./helpers/cli.js";
 
 const unsafe = "name\u001b[2J\r\n\u009b\u202e";
@@ -16,6 +16,12 @@ function fixture() {
 }
 
 describe("safe output", () => {
+  it("formats byte counts with decimal units and three significant digits", () => {
+    // 數值與原先使用的 pretty-bytes 7.2.0 預設輸出逐一比對一致。
+    expect([0, 1, 168, 999, 1000, 1234, 1805, 999_499, 999_500, 1_000_000, 10 ** 12, Number.MAX_SAFE_INTEGER].map(formatBytes))
+      .toEqual(["0 B", "1 B", "168 B", "999 B", "1 kB", "1.23 kB", "1.8 kB", "999 kB", "1 MB", "1 MB", "1 TB", "9.01 PB"]);
+  });
+
   it("escapes every Unicode bidirectional control", () => {
     let controls = "";
     for (let point = 0; point <= 0x10ffff; point++) {

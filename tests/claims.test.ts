@@ -177,6 +177,7 @@ describe("anchored private claims", () => {
         exists: true, sizeBytes: identity.sizeBytes!, identity: { ...identity, kind: "file" as const,
           sizeBytes: identity.sizeBytes!, modifiedMs: identity.modifiedMs! } };
       const result = await withOperation({ home, kind: "clean", target: ["codex"] }, () => cleanEntries([entry], {
+        checkOpenPaths: async () => ({ supported: true, openPaths: [] }),
         trash: wrapOperationTrash((paths, expected) => moveToSystemTrash(paths, expected!, {
           run: async () => { throw new Error("synthetic helper failure"); }
         }))

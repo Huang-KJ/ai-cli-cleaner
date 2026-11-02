@@ -16,9 +16,8 @@ export type TrashFn = (paths: string[], expected?: Map<string, ClaimIdentity>) =
 export type OpenFileCheckFn = (paths: string[]) => Promise<OpenFileCheck>;
 
 export interface CleanOptions {
-  dryRun?: boolean;
   batch?: boolean;
-  checkOpenPaths?: OpenFileCheckFn;
+  checkOpenPaths: OpenFileCheckFn;
   trash: TrashFn;
 }
 
@@ -37,22 +36,16 @@ export async function cleanEntries(entries: ScanEntry[], options: CleanOptions):
   const result: CleanResult = {
     deleted: [],
     scanErrors: entries.filter((entry) => entry.error),
-    openFileCheckUnsupported: false, failures: []
+    failures: []
   };
-  if (options.dryRun) return result;
   const groups = groupRelatedEntries(entries.filter((entry) => entry.exists && !entry.error));
   for (const group of options.batch ? batchEntryGroups(groups) : groups) {
     let attempted = false;
     const classified = new Set<ScanEntry>();
     try {
-      if (options.checkOpenPaths) {
-        const check = await options.checkOpenPaths(group.map((entry) => entry.path));
-        if (!check.supported) {
-          result.openFileCheckUnsupported = true;
-          throw new Error("Cannot check open-file status; ensure lsof is available, then retry.");
-        }
-        if (check.openPaths.length) throw new Error(`Refusing to clean open file(s): ${check.openPaths.join(", ")}`);
-      }
+      const check = await options.checkOpenPaths(group.map((entry) => entry.path));
+      if (!check.supported) throw new Error("Cannot check open-file status; ensure lsof is available, then retry.");
+      if (check.openPaths.length) throw new Error(`Refusing to clean open file(s): ${check.openPaths.join(", ")}`);
       await validateEntries(group);
       attempted = true;
       await options.trash(group.map((entry) => entry.path), new Map(group.map((entry) => {

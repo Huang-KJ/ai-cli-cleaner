@@ -66,20 +66,6 @@ describe("Antigravity scan and clean", () => {
     expect(await readFile(path.join(home, "trashed-brain", "artifact.md"), "utf8")).toBe("conversation");
   });
 
-  it("never calls Trash during a dry run", async () => {
-    const trash = vi.fn(async () => undefined);
-    const result = await cleanEntries([{
-      providerId: "antigravity",
-      providerName: "Google Antigravity",
-      pattern: "conversation data",
-      path: "/tmp/antigravity-data",
-      exists: true,
-      sizeBytes: 1
-    }], { dryRun: true, trash });
-    expect(result.deleted).toEqual([]);
-    expect(trash).not.toHaveBeenCalled();
-  });
-
   it("rejects a broad delete path that contains preserved settings", async () => {
     const home = await makeHome();
     await mkdir(path.join(home, ".gemini", "antigravity-cli"), { recursive: true });

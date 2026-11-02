@@ -21,12 +21,11 @@ import {
 import { assertConversationId } from "./types.js";
 import { antigravityHistoryId, isRecord } from "./metadata-values.js";
 import { readJsonlLines, rewriteJsonl, validateJsonl } from "./metadata-jsonl.js";
-import type { ConversationDeleteResult, ConversationRecord, DeleteConversationOptions } from "./types.js";
+import type { ConversationRecord, DeleteConversationOptions } from "./types.js";
 
 export async function deleteAntigravityConversation(
   conversation: ConversationRecord,
-  options: DeleteConversationOptions,
-  result: Pick<ConversationDeleteResult, "openFileCheckUnsupported">
+  options: DeleteConversationOptions
 ): Promise<void> {
   const home = options.home ?? homedir();
   let movedPaths: string[] = [];
@@ -48,7 +47,6 @@ export async function deleteAntigravityConversation(
     await assertSafeHomePaths(guardPaths, home, "inspect");
 
     const guardCheck = await options.checkOpenPaths(guardPaths);
-    if (!guardCheck.supported) result.openFileCheckUnsupported = true;
     if (!guardCheck.supported) {
       throw new Error("Cannot check whether files are open; close the Antigravity IDE and CLI, then retry.");
     }
@@ -100,7 +98,6 @@ export async function deleteAntigravityConversation(
         return options.trash(files, expected);
       }
     });
-    if (cleanResult.openFileCheckUnsupported) result.openFileCheckUnsupported = true;
     movedPaths = cleanResult.deleted.map((entry) => entry.path);
     if (cleanResult.failures.length > 0 || cleanResult.scanErrors.length > 0) {
       throw new Error([
@@ -111,7 +108,6 @@ export async function deleteAntigravityConversation(
 
     await assertMetadataInventoryUnchanged(inventory);
     const metadataCheck = await options.checkOpenPaths(metadataPaths);
-    if (!metadataCheck.supported) result.openFileCheckUnsupported = true;
     if (!metadataCheck.supported || metadataCheck.openPaths.length > 0) {
       throw new Error("Pre-update check failed: Antigravity metadata is open or its open-file status cannot be checked.");
     }

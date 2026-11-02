@@ -26,6 +26,35 @@ describe("agent process detection", () => {
     expect(identifyAgent("/Synthetic Folder/Claude.app/Contents/Frameworks/Claude Helper.app/Contents/MacOS/Claude Helper", "Claude Helper")).toBe("claude");
   });
 
+  it("recognizes the Claude Code CLI bundled inside Claude Desktop storage", () => {
+    const bundled = "/Users/Fixture User/Library/Application Support/Claude/claude-code/2.1.309/300ae7409767/claude.app/Contents/MacOS/claude";
+    expect(identifyAgent(`${bundled} --output-format stream-json --verbose`, "claude")).toBe("claude");
+    expect(identifyAgent(bundled.replace("/Claude/", "/Claude-3p/"), "claude")).toBe("claude");
+    expect(identifyAgent(bundled.replace("2.1.309", "2.2.0-next.1"), "claude")).toBe("claude");
+    expect(identifyAgent(bundled, "sleep")).toBeUndefined();
+    expect(identifyAgent(`/bin/sleep ${bundled}`, "sleep")).toBeUndefined();
+    for (const lookalike of [
+      "/Users/Fixture User/Downloads/claude.app/Contents/MacOS/claude",
+      "/Users/Fixture User/Library/Application Support/Other/claude-code/2.1.309/300ae7409767/claude.app/Contents/MacOS/claude",
+      "/Users/Fixture User/Library/Application Support/Claude/claude-code/latest/300ae7409767/claude.app/Contents/MacOS/claude",
+      "/Users/Fixture User/Library/Application Support/Claude/claude-code/2.1.309/not-a-hash/claude.app/Contents/MacOS/claude",
+      `${bundled}-helper`
+    ]) {
+      expect(() => identifyAgent(lookalike, "claude"), lookalike).toThrow(/Cannot confirm the agent executable location/);
+    }
+  });
+
+  it("recognizes the native Claude installer when launched through its claude symlink", () => {
+    // macOS 以連結解析後的版本檔名作為會計名稱，argv0 則保留 shell 輸入的 claude。
+    expect(identifyAgent("claude --resume", "2.1.309")).toBe("claude");
+    expect(identifyAgent("claude", "2.1.289-next")).toBe("claude");
+    expect(identifyAgent("/Users/Fixture User/.local/bin/claude --continue", "2.1.309")).toBe("claude");
+    expect(identifyAgent("claude-helper --resume", "2.1.309")).toBeUndefined();
+    expect(identifyAgent("/bin/zsh -c claude", "2.1.309")).toBeUndefined();
+    expect(identifyAgent("/Users/fixture/Downloads/claude", "2.1.309")).toBeUndefined();
+    expect(identifyAgent("claude --resume", "release")).toBeUndefined();
+  });
+
   it("does not identify Claude mentions or unrelated scripts as Claude", () => {
     expect(identifyAgent("/bin/zsh -c claude --resume", "zsh")).toBeUndefined();
     expect(identifyAgent("/bin/sleep /Applications/Claude.app/Contents/MacOS/Claude", "sleep")).toBeUndefined();
@@ -72,6 +101,24 @@ describe("agent process detection", () => {
     expect(identifyAgent("/Applications/Other.app/Contents/MacOS/Other /Synthetic Folder/Codex.app/Contents/MacOS/Codex", "Other")).toBeUndefined();
   });
 
+  it("recognizes the Antigravity agy CLI, Antigravity IDE bundle, and bundled language server", () => {
+    expect(identifyAgent("agy", "agy")).toBe("antigravity");
+    expect(identifyAgent("/Users/fixture/.local/bin/agy --resume", "agy")).toBe("antigravity");
+    expect(identifyAgent("/usr/local/bin/agy")).toBe("antigravity");
+    expect(() => identifyAgent("/Synthetic Folder/bin/agy", "agy")).toThrow(/Cannot confirm the agent executable location/);
+    expect(identifyAgent("/bin/zsh -c agy", "zsh")).toBeUndefined();
+    expect(identifyAgent("/usr/local/bin/agyle")).toBeUndefined();
+
+    const ide = "/Synthetic Folder/Antigravity IDE.app/Contents";
+    expect(identifyAgent(`${ide}/MacOS/Electron`, "Electron")).toBe("antigravity");
+    expect(identifyAgent(`${ide}/Frameworks/Antigravity IDE Helper (Renderer).app/Contents/MacOS/Antigravity IDE Helper (Renderer) --type=renderer`, "Antigravity IDE")).toBe("antigravity");
+    expect(identifyAgent("/Synthetic Folder/Antigravity.app/Contents/Resources/bin/language_server --stdin", "language_server")).toBe("antigravity");
+    expect(identifyAgent(`${ide}/Resources/bin/language_server`, "language_server")).toBe("antigravity");
+    expect(identifyAgent("/Applications/Other.app/Contents/MacOS/Electron", "Electron")).toBeUndefined();
+    expect(identifyAgent(`/bin/sleep ${ide}/MacOS/Electron`, "sleep")).toBeUndefined();
+    expect(identifyAgent("/Synthetic Folder/bin/language_server", "language_server")).toBeUndefined();
+  });
+
   it("parses native one-shot snapshots with spaces and truncated process names", () => {
     const output = row(100, 1, 501, "Codex (Renderer) /Synthetic Folder/ChatGPT.app/Contents/Frameworks/Codex Framework.framework/Helpers/Codex (Renderer).app/Contents/MacOS/Codex (Renderer)");
     expect(parseAgentProcesses(output, true)[0]).toMatchObject({ accounting: "Codex (Renderer)",
@@ -100,6 +147,42 @@ describe("agent process detection", () => {
     psRunner.mockReset().mockResolvedValue({ stdout: output, stderr: "" });
     await expect(findRunningAgents(["codex"], { platform: "darwin", uid: 501 }))
       .rejects.toThrow("Cannot confirm the agent executable location; operation canceled.");
+  });
+
+  it("finds launcher-based CLIs and the Antigravity IDE in a native snapshot", async () => {
+    // ps 只保留 16 字元會計名稱；Helper 名稱會被截成 "Antigravity IDE "。
+    const native = (pid: number, accounting: string, command: string) =>
+      row(pid, 1, 501, `${accounting.slice(0, 16).padEnd(16)} ${command}`);
+    const ide = "/Applications/Antigravity IDE.app/Contents";
+    psRunner.mockReset().mockResolvedValue({ stdout: [
+      native(410, "2.1.309", "claude --resume"),
+      native(420, "agy", "agy"),
+      native(430, "Electron", `${ide}/MacOS/Electron`),
+      native(431, "Antigravity IDE Helper (Renderer)", `${ide}/Frameworks/Antigravity IDE Helper (Renderer).app/Contents/MacOS/Antigravity IDE Helper (Renderer) --type=renderer`),
+      native(440, "Electron", "/Applications/Other.app/Contents/MacOS/Electron")
+    ].join("\n"), stderr: "" });
+
+    await expect(findRunningAgents(["claude"], { platform: "darwin", uid: 501 }))
+      .resolves.toEqual([{ pid: 410, providerId: "claude" }]);
+    await expect(findRunningAgents(["antigravity"], { platform: "darwin", uid: 501 })).resolves.toEqual([
+      { pid: 420, providerId: "antigravity" }, { pid: 430, providerId: "antigravity" }, { pid: 431, providerId: "antigravity" }
+    ]);
+  });
+
+  it("limits unconfirmed agent locations to the provider they could belong to", async () => {
+    const unconfirmed = row(300, 1, 501, "claude           /Synthetic Folder/bin/claude --resume");
+    const ambiguousNode = row(301, 1, 501, "node             /usr/local/bin/node /Synthetic Folder/node_modules/@github/copilot/dist/cli.js");
+    const grok = row(302, 1, 501, "grok             /usr/local/bin/grok chat");
+    psRunner.mockReset().mockResolvedValue({ stdout: [unconfirmed, ambiguousNode, grok].join("\n"), stderr: "" });
+
+    await expect(findRunningAgents(["codex"], { platform: "darwin", uid: 501 })).resolves.toEqual([]);
+    await expect(findRunningAgents(["grok"], { platform: "darwin", uid: 501 })).resolves.toEqual([{ pid: 302, providerId: "grok" }]);
+    await expect(findRunningAgents(["claude"], { platform: "darwin", uid: 501 }))
+      .rejects.toThrow("Cannot confirm the agent executable location; operation canceled.");
+    await expect(findRunningAgents(["copilot"], { platform: "darwin", uid: 501 }))
+      .rejects.toThrow(/Cannot determine the Node agent script boundary/);
+    await expect(findRunningAgents(["codex", "claude"], { platform: "darwin", uid: 501 }))
+      .rejects.toThrow(/Cannot confirm the agent executable location/);
   });
 
   it("parses App paths with spaces and rejects incomplete ps output", () => {
@@ -168,6 +251,27 @@ describe("stopAgents", () => {
     });
     expect(result.stopped).toEqual([{ pid: 300, providerId: "codex" }]);
     expect(signal).toHaveBeenCalledExactlyOnceWith(300, "SIGTERM");
+  });
+
+  it("stops the selected provider while another provider has an unconfirmed location", async () => {
+    const native = (pid: number, ppid: number, accounting: string, command: string) =>
+      row(pid, ppid, 501, `${accounting.padEnd(16)} ${command}`);
+    const lines = [native(100, 1, "zsh", "/bin/zsh"), native(200, 100, "node", "/usr/local/bin/node /tmp/ai-cleaner.js"),
+      native(305, 1, "claude", "/Synthetic Folder/bin/claude")];
+    const app = native(300, 1, "ChatGPT", "/Synthetic Folder/ChatGPT.app/Contents/MacOS/ChatGPT");
+    psRunner.mockReset().mockResolvedValueOnce({ stdout: [...lines, app].join("\n"), stderr: "" })
+      .mockResolvedValueOnce({ stdout: [...lines, app].join("\n"), stderr: "" })
+      .mockResolvedValue({ stdout: lines.join("\n"), stderr: "" });
+    const signal = vi.fn();
+    await expect(stopAgents(["codex"], { platform: "darwin", uid: 501, pid: 200, signal, sleep: async () => {} }))
+      .resolves.toEqual({ stopped: [{ pid: 300, providerId: "codex" }] });
+    expect(signal).toHaveBeenCalledExactlyOnceWith(300, "SIGTERM");
+
+    psRunner.mockReset().mockResolvedValue({ stdout: [...lines, app].join("\n"), stderr: "" });
+    signal.mockReset();
+    await expect(stopAgents(["claude"], { platform: "darwin", uid: 501, pid: 200, signal }))
+      .rejects.toThrow(/Cannot confirm the agent executable location/);
+    expect(signal).not.toHaveBeenCalled();
   });
 
   it("escalates to SIGKILL and rechecks after SIGTERM fails", async () => {

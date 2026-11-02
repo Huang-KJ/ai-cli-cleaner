@@ -23,11 +23,9 @@ export function systemTrashBinary(): string {
 
 export async function moveToSystemTrash(
   paths: string[],
-  expectedOrOptions: Map<string, ClaimIdentity> | { platform?: string; run?: TrashRunner } = {},
-  runnerOptions: { platform?: string; run?: TrashRunner } = {}
+  expected: ReadonlyMap<string, ClaimIdentity> | undefined,
+  options: { platform?: string; run?: TrashRunner } = {}
 ): Promise<void> {
-  const expected = expectedOrOptions instanceof Map ? expectedOrOptions : undefined;
-  const options = expectedOrOptions instanceof Map ? runnerOptions : expectedOrOptions;
   if ((options.platform ?? process.platform) !== "darwin") {
     throw new Error("System Trash is only supported on macOS.");
   }
@@ -36,26 +34,21 @@ export async function moveToSystemTrash(
     throw new Error("Trash operations require absolute paths other than the filesystem root.");
   }
   if (unique.length === 0) return;
-  const run = options.run ?? runTrash;
   const binary = systemTrashBinary();
-  if (!expected) throw new Error("System Trash requires the approved filesystem identity for every source.");
-  let staged = unique;
-  let claim: Awaited<ReturnType<typeof claimPaths>> | undefined;
-  if (expected) {
-    if (unique.some((file) => !expected.has(file))) throw new Error("System Trash requires the approved filesystem identity for every source.");
-    const temporary = realpathSync(tmpdir());
-    const operationHome = currentOperationHome();
-    const home = operationHome && unique.every((file) => containsPath(operationHome, file)) ? operationHome
-      : unique.every((file) => containsPath(temporary, file)) ? temporary
-      : unique.every((file) => containsPath(tmpdir(), file)) ? tmpdir() : homedir();
-    claim = await claimPaths(home, unique.map((file) => ({ path: file, identity: expected.get(file)! })));
-    staged = unique.map((file) => claim!.files.get(file)!);
+  if (!expected || unique.some((file) => !expected.has(file))) {
+    throw new Error("System Trash requires the approved filesystem identity for every source.");
   }
+  const temporary = realpathSync(tmpdir());
+  const operationHome = currentOperationHome();
+  const home = operationHome && unique.every((file) => containsPath(operationHome, file)) ? operationHome
+    : unique.every((file) => containsPath(temporary, file)) ? temporary
+    : unique.every((file) => containsPath(tmpdir(), file)) ? tmpdir() : homedir();
+  const claim = await claimPaths(home, unique.map((file) => ({ path: file, identity: expected.get(file)! })));
   try {
-    await runTrashBatches(binary, staged, run);
-    await claim?.markTrashed();
+    await runTrashBatches(binary, unique.map((file) => claim.files.get(file)!), options.run ?? runTrash);
+    await claim.markTrashed();
   } catch (error) {
-    throw Object.assign(new Error(`System Trash operation failed and may have moved some items. Check the cleanup results; no fallback .Trash directory was used.${claim ? ` Recovery directory: ${claim.directory}` : ""}`, { cause: error }), { unconfirmedTrash: true, recoveryPath: claim?.directory });
+    throw Object.assign(new Error(`System Trash operation failed and may have moved some items. Check the cleanup results; no fallback .Trash directory was used. Recovery directory: ${claim.directory}`, { cause: error }), { unconfirmedTrash: true, recoveryPath: claim.directory });
   }
 }
 

@@ -99,9 +99,9 @@ describe("system Trash", () => {
 
   it("rejects invalid paths and unsupported platforms before execution", async () => {
     const run = vi.fn(async () => undefined);
-    await expect(moveToSystemTrash(["relative"], { run })).rejects.toThrow(/Trash operations require absolute paths/);
-    await expect(moveToSystemTrash(["/"], { run })).rejects.toThrow(/Trash operations require absolute paths/);
-    await expect(moveToSystemTrash(["/fixture"], { run, platform: "linux" })).rejects.toThrow(/macOS/);
+    await expect(moveToSystemTrash(["relative"], undefined, { run })).rejects.toThrow(/Trash operations require absolute paths/);
+    await expect(moveToSystemTrash(["/"], undefined, { run })).rejects.toThrow(/Trash operations require absolute paths/);
+    await expect(moveToSystemTrash(["/fixture"], undefined, { run, platform: "linux" })).rejects.toThrow(/macOS/);
     expect(run).not.toHaveBeenCalled();
   });
 
@@ -115,7 +115,7 @@ describe("system Trash", () => {
 
   it("requires approved identities even when a runner is injected", async () => {
     const run = vi.fn(async () => undefined);
-    await expect(moveToSystemTrash(["/fixture"], { run })).rejects.toThrow(/approved filesystem identity/);
+    await expect(moveToSystemTrash(["/fixture"], undefined, { run })).rejects.toThrow(/approved filesystem identity/);
     expect(run).not.toHaveBeenCalled();
   });
 });

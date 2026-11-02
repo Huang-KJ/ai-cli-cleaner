@@ -22,7 +22,7 @@ node lib/claim-helper.cjs
 
 `npm run check` runs type checking and the complete test suite, including a build. Start with relevant behavior tests while editing, then complete the full check before delivery or packaging. Use synthetic fixtures for ownership, concurrent changes, unknown schemas, partial moves, and recovery records. Never use real conversations, accounts, or user databases as fixtures.
 
-CLI tests share output collectors and dependency defaults in [tests/helpers/cli.ts](tests/helpers/cli.ts). Unexpected scans, conversation discovery/deletion, and agent shutdown throw by default. Override only the dependencies a case needs, and retain explicit assertions for confirmation, process guards, and output channels.
+CLI tests share output collectors and dependency defaults in [tests/helpers/cli.ts](tests/helpers/cli.ts). Unexpected scans, conversation discovery/deletion, agent shutdown, diagnostics, recovery, and update calls throw by default; the stopped-agent check passes unless a case overrides it. Override only the dependencies a case needs, and retain explicit assertions for confirmation, process guards, and output channels.
 
 Run the built CLI from the checkout with `node dist/index.js --help`. Use `npm run build` when you only need to rebuild. Development setup does not install a global command. `npm install --global .` can link a command to the checkout; retain the checkout and rebuild after source changes. The built-in updater requires a regular global archive installation and refuses source checkouts or links.
 
@@ -62,18 +62,9 @@ Each case creates conversations in new isolated data roots using a local mock mo
 
 The Antigravity case requires the verified 1.3.5 binary SHA-256. It uses the official Gemini provider configuration, a fabricated API key, and a loopback model endpoint. Its proxy rejects external CONNECT requests; this is not an OS-level network isolation guarantee. The case checks selected-deletion refusal, bulk movement, and manual Trash restoration after per-file hash verification. It does not rewrite protobuf summaries or create index-rewrite backups. Upstream may return `SUCCESS` for a nonexistent ID while creating another conversation, so verification must also check IDs, warnings, and whether the original synthetic content reached model context.
 
-## Controlled benchmarks
-
-```bash
-npm run build
-node scripts/benchmark.mjs --sizes 1000,10000 --selected 100
-```
-
-The benchmark generates deterministic synthetic Codex data and measures inventory, preflight, directory snapshots, and selected deletion. It checks all retained data, recovery copies, and operation records. Timing covers core operations: open-file checks use controlled responses, and selected files and backups move within isolated storage. It does not measure complete CLI costs including `ps`, `lsof`, and macOS Trash. Results go to the terminal by default; use `--output` only when a retained benchmark is useful. A synthetic scale test is not a real-use performance guarantee.
-
 ## Data-operation boundaries
 
-Confirmation prompts, process guards, and ownership/index checks have distinct responsibilities. A new deletion entry point must use the runtime guards, operation journal, and Trash wrapper. A confirmation prompt alone is insufficient. Deletion requires stopped agents; `--allow-running` is rejected for mutation and retained only for read-only previews. Open databases and SQLite sidecars must never bypass file or index checks.
+Confirmation prompts, process guards, and ownership/index checks have distinct responsibilities. A new deletion entry point must use the runtime guards, operation journal, and Trash wrapper. A confirmation prompt alone is insufficient. Deletion requires stopped agents; only read-only dry runs may proceed while agents run, and their metadata plans cannot create backups or write. Open databases and SQLite sidecars must never bypass file or index checks.
 
 Memory preservation is the default in both public commands and core APIs. Only explicit `includeMemories: true` may include supported memory stores or selected memory records. Keep discovery, preview, confirmation, movement, metadata changes, and completion checks aligned with that policy; `--all`, `--yes`, and `--force-stop` must not opt in. For mixed directory trees such as Claude projects, preserve memory children without moving their parent, and revalidate preserved boundaries before every move. Use synthetic fixtures to verify byte-for-byte retention and opt-in deletion.
 
@@ -105,7 +96,7 @@ The native Trash helper is `vendor/macos-trash` version 3.0.0. Its pinned upstre
 
 `node lib/native-helper.cjs` checks the local binary's hash, size, executable permission, and license without downloading or executing it. Add `--upstream` to verify the pinned official tag/commit, release asset/archive, and license hashes in memory and report the latest version. It does not execute unknown binaries or change files. Ordinary `npm audit` does not cover vendored binaries. Source/hash verification is not a current advisory audit: maintainers must also review upstream security notices, release notes, and source changes. Native updates require updated provenance, license and hashes, synthetic Trash tests, platform CI, and offline package validation.
 
-The Dependabot configuration schedules weekly npm and GitHub Actions update proposals. The dependency-audit workflow is configured for Mondays at 09:17 UTC+8 and manual dispatch. It audits the lockfile and verifies the native source using Linux, Node.js, and source files, without installing macOS runtime packages or running cleanup. Its GitHub token is restricted to the native-source API check; the product's public updater does not need credentials. Consult workflow results for the relevant revision; configuration alone is not a successful run. Updates require compatibility and package validation and are not merged or published automatically.
+The Dependabot configuration schedules weekly npm and GitHub Actions update proposals and waits seven days after a release before proposing it; security updates are not delayed. Apply the same cooldown to manual upgrades, especially for bundled runtime dependencies, and change only the intended lockfile entries. The dependency-audit workflow is configured for Mondays at 09:17 UTC+8 and manual dispatch. It audits the lockfile and verifies the native source using Linux, Node.js, and source files, without installing macOS runtime packages or running cleanup. Its GitHub token is restricted to the native-source API check; the product's public updater does not need credentials. Consult workflow results for the relevant revision; configuration alone is not a successful run. Updates require compatibility and package validation and are not merged or published automatically.
 
 ## Prepare a release
 

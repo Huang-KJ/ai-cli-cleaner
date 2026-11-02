@@ -24,10 +24,8 @@ import {
 import {
   assertMetadataInventoryUnchanged,
   assertMetadataTargetUnchanged,
-  assertSqliteRecoveryUnchanged,
   atomicRewrite,
   createMetadataInventory,
-  guardSqliteRecovery,
   rehearseMetadata,
   withSqliteSidecars,
   type MetadataInventory
@@ -41,37 +39,21 @@ export interface CodexMetadataPlan extends Omit<MetadataPlan, "execute"> {
   execute: () => Promise<MetadataPlanResult>;
 }
 
+// preview 供代理仍在執行時的 dry-run：容許 SQLite 內容變動，但不可備份或寫入。
 export async function prepareCodexThreadsMetadata(
   home: string,
   paths: CodexMetadataPaths,
   threadIds: string[],
   trash: TrashFn,
   rolloutPaths: string[] = [],
-  options: CodexMemoryOptions = {}
+  options: CodexMemoryOptions & { preview?: boolean } = {}
 ): Promise<CodexMetadataPlan> {
   threadIds.forEach(assertConversationId);
   await assertKnownCodexDatabases(home);
   const rollouts = await selectedRolloutPaths(home, threadIds, rolloutPaths);
   return prepareCodexPlan(home, scopeCodexMetadata(paths, options), trash, threadIds, "Selected Codex conversations", async (mapped, inventory) => {
     await deleteCodexMetadataInternal(mapped, threadIds, inventory, rollouts);
-  });
-}
-
-export async function prepareLiveCodexThreadsMetadata(
-  home: string,
-  paths: CodexMetadataPaths,
-  threadIds: string[],
-  trash: TrashFn,
-  rolloutPaths: string[] = [],
-  options: CodexMemoryOptions = {}
-): Promise<CodexMetadataPlan> {
-  threadIds.forEach(assertConversationId);
-  await assertKnownCodexDatabases(home);
-  const rollouts = await selectedRolloutPaths(home, threadIds, rolloutPaths);
-  const scoped = scopeCodexMetadata(paths, options);
-  return prepareCodexPlan(home, scoped, trash, threadIds, "Selected Codex conversations", async (mapped, inventory) => {
-    await deleteCodexMetadataInternal(mapped, threadIds, inventory, rollouts);
-  }, codexMetadataFiles(scoped), true, rollouts);
+  }, options.preview);
 }
 
 async function selectedRolloutPaths(home: string, threadIds: string[], candidates: string[]): Promise<string[]> {
@@ -175,26 +157,17 @@ async function prepareCodexPlan(
   conversationIds: string[],
   label: string,
   run: (mapped: CodexPlanPaths, inventory?: MetadataInventory) => Promise<void>,
-  inventoryFiles: string[] = codexMetadataFiles(paths),
-  liveSqlite = false,
-  rolloutPaths: string[] = []
+  preview = false
 ): Promise<CodexMetadataPlan> {
   if (!path.isAbsolute(home)) throw new Error("Codex home must be an absolute path.");
   const providerRoot = path.join(path.resolve(home), ".codex");
-  const inventory = await createMetadataInventory(inventoryFiles, providerRoot, home, { liveSqlite });
-  const rehearsed = await rehearseMetadata(inventory, async (copies) => {
+  const inventory = await createMetadataInventory(codexMetadataFiles(paths), providerRoot, home, { liveSqlite: preview });
+  const changedPaths = await rehearseMetadata(inventory, async (copies) => {
     await run(mapCodexPaths(paths, copies));
   });
-  if (liveSqlite) registerCodexRecoveryGuards(paths, conversationIds, inventory, rolloutPaths);
-  // 線上資料庫在預演後可能新增目標資料列；全部備份，並於交易內重驗未選取列。
-  const changedPaths = liveSqlite ? [...new Set([
-    ...rehearsed,
-    ...inventory.entries.filter((entry) => entry.kind === "sqlite" && entry.identity &&
-      /\.(?:sqlite|db)$/i.test(entry.path)).map((entry) => entry.path)
-  ])] : rehearsed;
   const operations = changedPaths.map((file) => `${label} metadata: ${path.relative(providerRoot, file)}`);
   const metadata = createMetadataPlan({
-    home, inventory, changedPaths, providerId: "codex", conversationIds,
+    home, inventory, changedPaths, providerId: "codex", conversationIds, previewOnly: preview,
     write: async (markChanged, copies, mappedInventory) => {
       markChanged();
       await run(mapCodexPaths(paths, copies), mappedInventory);
@@ -208,21 +181,6 @@ async function prepareCodexPlan(
     prepareRecovery: metadata.prepareRecovery,
     execute: () => metadata.execute(trash)
   };
-}
-
-function registerCodexRecoveryGuards(
-  paths: CodexPlanPaths,
-  ids: string[],
-  inventory: MetadataInventory,
-  rolloutPaths: string[] = []
-): void {
-  for (const [key, schema] of codexDatabaseEntries) {
-    const file = paths[key];
-    if (file && inventory.entries.some((entry) => entry.path === path.resolve(file) && entry.identity)) {
-      guardSqliteRecovery(inventory, file, (database) => key === "stateDatabase"
-        ? selectStateRows(database, ids, rolloutPaths) : selectCodexRows(schema, ids));
-    }
-  }
 }
 
 function mapCodexPaths(paths: CodexPlanPaths, copies: Map<string, string>): CodexPlanPaths {
@@ -355,7 +313,9 @@ async function collectCodexRollouts(home: string): Promise<string[]> {
       else if (entry.isFile() && entry.name.endsWith(".jsonl")) {
         const file = path.join(directory, entry.name);
         const rollout = await validateCodexRolloutPath(file, home);
-        if (rollout.status !== "valid") throw new Error(`Cannot validate Codex rollout: ${file}`);
+        if (rollout.status !== "valid") {
+          throw new Error(`Cannot validate Codex rollout: ${file}${rollout.status === "invalid" ? ` (${rollout.reason})` : ""}`);
+        }
         files.push(file);
       }
     }
@@ -390,7 +350,7 @@ async function deleteStateRows(
     }
     // 封存副本及沒有 threads 主列的 rollout 也有可確認的遷移紀錄。
     for (const rollout of rolloutPaths) deleteExact(database, "rollout_migration_skipped_rollouts", "rollout_path", rollout);
-  }, (database) => selectStateRows(database, threadIds, rolloutPaths), inventory);
+  }, (database) => selectStateRows(database, threadIds, rolloutPaths));
 }
 
 function selectStateRows(database: DatabaseSync, threadIds: string[], rolloutPaths: string[] = []): ReturnType<SqliteSelection> {
@@ -413,7 +373,7 @@ async function deleteCodexRows(
   await assertMetadataTargetUnchanged(file, inventory);
   transact(file, (database) => {
     for (const table of schema.tables) deleteCodexTableRows(database, table, threadIds);
-  }, () => selectCodexRows(schema, threadIds), inventory);
+  }, () => selectCodexRows(schema, threadIds));
 }
 
 function deleteCodexTableRows(database: DatabaseSync, table: CodexTableSchema, ids: string[]): void {
@@ -442,15 +402,12 @@ function selectCodexRows(schema: CodexDatabaseSchema, threadIds: string[]): Retu
 function transact(
   file: string,
   operation: (database: DatabaseSync) => void,
-  selected: SqliteSelection,
-  inventory?: MetadataInventory
+  selected: SqliteSelection
 ): void {
   const database = new DatabaseSync(file);
   try {
     database.exec("PRAGMA busy_timeout = 2500; PRAGMA foreign_keys = ON; PRAGMA secure_delete = ON");
     withSqliteTransaction(database, () => {
-      // 寫入鎖內重驗備份，避免最後一次預檢後新增的所選資料遭到移除。
-      assertSqliteRecoveryUnchanged(database, file, inventory);
       const assertRetained = protectSqliteRows(database, selected(database));
       operation(database);
       assertRetained();

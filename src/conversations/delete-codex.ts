@@ -6,7 +6,7 @@ import type { ScanEntry } from "../cleaners/types.js";
 import { codexMetadataFiles, scopeCodexMetadata, type CodexMetadataPaths } from "./codex-paths.js";
 import { readCodexResidualIds } from "./codex-inventory.js";
 import { readJsonlLines } from "./metadata-jsonl.js";
-import { prepareCodexThreadsMetadata, prepareLiveCodexThreadsMetadata } from "./codex-metadata.js";
+import { prepareCodexThreadsMetadata } from "./codex-metadata.js";
 import { codexDirectArtifact, codexJsonlId } from "./codex-artifacts.js";
 import { attachMetadataFailure, withSqliteSidecars } from "./metadata-safety.js";
 import {
@@ -35,7 +35,6 @@ export async function deleteCodexConversations(
     const originalMetadataSet = new Set(withSqliteSidecars(codexMetadataFiles(originalMetadata)).map((file) => path.resolve(file)));
     const assertIndexesClosed = async (): Promise<void> => {
       const indexes = await options.checkOpenPaths(metadataPaths);
-      if (!indexes.supported) result.openFileCheckUnsupported = true;
       if (!indexes.supported) throw new Error("Cannot check whether index files are open.");
       if (indexes.openPaths.length) throw new Error(`Refusing to rewrite open Codex indexes; close the selected agents: ${indexes.openPaths.join(", ")}`);
     };
@@ -58,15 +57,14 @@ export async function deleteCodexConversations(
     }
     if (!options.dryRun) {
       const checked = await options.checkOpenPaths(ownedPaths);
-      if (!checked.supported) result.openFileCheckUnsupported = true;
       if (!checked.supported) throw new Error("Cannot check whether files are open; close the relevant agents, then retry.");
       if (checked.openPaths.length) throw new Error(`Refusing to delete open files: ${checked.openPaths.join(", ")}`);
       await assertIndexesClosed();
     }
-    plan = await (options.dryRun ? prepareLiveCodexThreadsMetadata : prepareCodexThreadsMetadata)(
+    plan = await prepareCodexThreadsMetadata(
       home, metadata, conversations.map((item) => item.id), options.trash,
       [...conversations.flatMap((item) => item.dataPaths), ...entries.filter((entry) => entry.exists).map((entry) => entry.path)],
-      { includeMemories: options.includeMemories });
+      { includeMemories: options.includeMemories, preview: options.dryRun });
     if (!options.includeMemories && (originalMetadata.memoriesDatabase || originalMetadata.memoriesV2Database)) {
       await assertNonMemorySelection(conversations.filter((item) => !item.dataPaths.length), metadata, home);
     }
@@ -96,7 +94,6 @@ export async function deleteCodexConversations(
       }
     });
     deletedPaths.push(...cleaned.deleted.map((entry) => entry.path));
-    if (cleaned.openFileCheckUnsupported) result.openFileCheckUnsupported = true;
     if (cleaned.failures.length || cleaned.scanErrors.length) {
       throw attachMetadataFailure(new Error([...cleaned.failures.map((failure) => failure.error.message),
         ...cleaned.scanErrors.map((entry) => entry.error?.message ?? `Cannot scan ${entry.path}`)].join("; ")),

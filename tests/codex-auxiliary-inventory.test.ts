@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { discoverConversations } from "../src/conversations/discover.js";
 import { deleteConversations } from "../src/conversations/delete.js";
 import { getCodexMetadataPaths } from "../src/conversations/codex-paths.js";
-import { prepareCodexThreadsMetadata, prepareLiveCodexThreadsMetadata } from "../src/conversations/codex-metadata.js";
+import { prepareCodexThreadsMetadata } from "../src/conversations/codex-metadata.js";
 
 const homes: string[] = [];
 afterEach(async () => {
@@ -93,20 +93,23 @@ describe("Codex auxiliary metadata-only inventory", () => {
     await expect(fs.lstat(path.join(home, ".ai-cli-cleaner"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it.each([
-    ["offline", prepareCodexThreadsMetadata], ["preview", prepareLiveCodexThreadsMetadata]
-  ] as const)("excludes supplied memory metadata paths from the default %s API", async (label, prepare) => {
+  it.each(["offline", "preview"] as const)("excludes supplied memory metadata paths from the default %s API", async (label) => {
     const home = await makeHome();
     const memory = await seedMemories(home);
     const paths = getCodexMetadataPaths(home, { includeMemories: true });
     for (const file of memory.keys()) await fs.chmod(file, 0o000);
     try {
-      const plan = await prepare(home, paths, ["selected"], async () => { throw new Error("不得搬移資料"); });
+      const plan = await prepareCodexThreadsMetadata(home, paths, ["selected"], async () => { throw new Error("不得搬移資料"); },
+        [], { preview: label === "preview" });
       expect(plan.paths.some((file) => file.includes("/.codex/memories"))).toBe(false);
       expect(plan.operations).toEqual([]);
-      await plan.prepareRecovery();
-      if (label === "preview") await expect(plan.execute()).rejects.toThrow(/require stopped agents/);
-      else await plan.execute();
+      if (label === "preview") {
+        await expect(plan.prepareRecovery()).rejects.toThrow("A preview plan cannot create deletion backups.");
+        await expect(plan.execute()).rejects.toThrow("A preview plan cannot execute deletion.");
+      } else {
+        await plan.prepareRecovery();
+        await plan.execute();
+      }
     } finally {
       for (const file of memory.keys()) await fs.chmod(file, 0o600);
     }

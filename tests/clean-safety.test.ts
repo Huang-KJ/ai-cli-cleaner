@@ -13,6 +13,7 @@ import { moveToSystemTrash } from "../src/fs/trash.js";
 import { inspectOperation, listOperations, withOperation, wrapOperationTrash } from "../src/recovery/operations.js";
 
 const fixtureHomes: string[] = [];
+const closed = async () => ({ supported: true, openPaths: [] as string[] });
 
 afterEach(async () => {
   vi.restoreAllMocks();
@@ -37,7 +38,7 @@ describe("cleanEntries safety branches", () => {
       if (moved && file === wal) throw Object.assign(new Error("post-move access denied"), { code: "EACCES" });
       return original(file);
     });
-    const result = await cleanEntries(entries, { trash: async (files) => {
+    const result = await cleanEntries(entries, { checkOpenPaths: closed, trash: async (files) => {
       await move(files);
       moved = true;
     } });
@@ -74,7 +75,7 @@ describe("cleanEntries safety branches", () => {
 
     expect(lsof).toHaveBeenCalledOnce();
     expect(unsupportedTrash).not.toHaveBeenCalled();
-    expect(unsupportedResult.openFileCheckUnsupported).toBe(true);
+    expect(unsupportedResult.failures[0]?.error.message).toMatch(/Cannot check open-file status/);
     expect(unsupportedResult.failures.map((failure) => failure.entry.path))
       .toEqual([unsupportedFile]);
   });
@@ -103,7 +104,7 @@ describe("cleanEntries safety branches", () => {
     await writeFile(target, "conversation fixture");
     const entry = await scanEntry(home, "~/.fixture/session.jsonl");
     const trash = vi.fn(async () => undefined);
-    const result = await cleanEntries([entry], { trash });
+    const result = await cleanEntries([entry], { checkOpenPaths: closed, trash });
     expect(trash).toHaveBeenCalledOnce();
     expect(result.deleted).toEqual([]);
     expect(result.failures).toHaveLength(1);
@@ -124,7 +125,7 @@ describe("cleanEntries safety branches", () => {
     await writeFile(path.join(directory, "new.jsonl"), "new session");
     const trash = vi.fn(async () => undefined);
 
-    const result = await cleanEntries(entries, { trash });
+    const result = await cleanEntries(entries, { checkOpenPaths: closed, trash });
 
     expect(trash).not.toHaveBeenCalled();
     expect(result.deleted).toEqual([]);
@@ -148,7 +149,7 @@ describe("cleanEntries safety branches", () => {
     await symlink(redirect, target);
     const trash = vi.fn(async () => undefined);
 
-    const result = await cleanEntries([entry], { trash });
+    const result = await cleanEntries([entry], { checkOpenPaths: closed, trash });
 
     expect(trash).not.toHaveBeenCalled();
     expect(result.deleted).toEqual([]);
@@ -172,7 +173,7 @@ describe("cleanEntries safety branches", () => {
       throw new Error("Trash failed after moving one item");
     });
 
-    const result = await cleanEntries(entries, { trash });
+    const result = await cleanEntries(entries, { checkOpenPaths: closed, trash });
 
     expect(trash).toHaveBeenCalledOnce();
     expect(trash).toHaveBeenCalledWith(expect.arrayContaining([database, wal, shm]), expect.any(Map));
@@ -203,7 +204,7 @@ describe("cleanEntries safety branches", () => {
     };
     const trash = vi.fn(async () => undefined);
 
-    await cleanEntries([...entries, otherProviderWal], { trash });
+    await cleanEntries([...entries, otherProviderWal], { checkOpenPaths: closed, trash });
 
     expect(trash).toHaveBeenNthCalledWith(1, [database, wal], expect.any(Map));
     expect(trash).toHaveBeenNthCalledWith(2, [wal], expect.any(Map));
@@ -225,7 +226,7 @@ describe("cleanEntries safety branches", () => {
     };
     const trash = vi.fn(async () => undefined);
 
-    const result = await cleanEntries([mislabeledEntry], { trash });
+    const result = await cleanEntries([mislabeledEntry], { checkOpenPaths: closed, trash });
 
     expect(trash).not.toHaveBeenCalled();
     expect(result.failures[0]?.error.message).toMatch(/SQLite sidecar set changed/);
@@ -245,7 +246,7 @@ describe("cleanEntries safety branches", () => {
     await utimes(shm, new Date(), new Date(entries.find((entry) => entry.path === shm)!.identity!.modifiedMs + 1000));
     const trash = await makeTrash(home);
 
-    const result = await cleanEntries(entries, { trash });
+    const result = await cleanEntries(entries, { checkOpenPaths: closed, trash });
 
     expect(trash).toHaveBeenCalledWith([database, shm, wal], expect.any(Map));
     expect(result.deleted).toHaveLength(3);
@@ -307,7 +308,7 @@ describe("cleanEntries safety branches", () => {
       if (change === "hardlink without mtime drift") expect((await stat(shm)).mtimeMs).toBe(original.modifiedMs);
       else await utimes(shm, new Date(), new Date(original.modifiedMs + 1000));
       const trash = vi.fn();
-      const result = await cleanEntries(entries, { trash });
+      const result = await cleanEntries(entries, { checkOpenPaths: closed, trash });
       expect(trash).not.toHaveBeenCalled();
       expect(result.deleted).toEqual([]);
       expect(result.failures.every((failure) => failure.error.message.includes(shm))).toBe(true);
@@ -325,7 +326,7 @@ describe("cleanEntries safety branches", () => {
       await utimes(file, new Date(), new Date(original.modifiedMs + 1000));
     }
     const trash = vi.fn();
-    const result = await cleanEntries(entries, { trash });
+    const result = await cleanEntries(entries, { checkOpenPaths: closed, trash });
     expect(trash).not.toHaveBeenCalled();
     expect(result.deleted).toEqual([]);
     expect(result.failures).toHaveLength(entries.length);
@@ -344,7 +345,7 @@ describe("cleanEntries safety branches", () => {
       await writeFile(newMember, "new sidecar");
       const trash = vi.fn(async () => undefined);
 
-      const result = await cleanEntries(entries, { trash });
+      const result = await cleanEntries(entries, { checkOpenPaths: closed, trash });
 
       expect(trash).not.toHaveBeenCalled();
       expect(result.deleted).toEqual([]);
@@ -367,7 +368,7 @@ describe("cleanEntries safety branches", () => {
     await symlink(redirect, shm);
     const trash = vi.fn(async () => undefined);
 
-    const result = await cleanEntries(entries, { trash });
+    const result = await cleanEntries(entries, { checkOpenPaths: closed, trash });
 
     expect(trash).not.toHaveBeenCalled();
     expect(result.failures.map((failure) => failure.entry.path)).toEqual([database, shm]);

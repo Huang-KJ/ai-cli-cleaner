@@ -84,7 +84,6 @@ export function createMetadataPlan(options: MetadataPlanOptions): MetadataPlan {
       try {
         if (options.previewOnly) throw new Error("A preview plan cannot execute deletion.");
         await validate();
-        if (options.inventory.liveSqlite) throw new Error("Metadata updates require stopped agents; live cleanup is no longer supported.");
         await options.beforeWrite?.();
         if (!options.changedPaths.length) return { metadataChanged };
         await prepareRecovery();

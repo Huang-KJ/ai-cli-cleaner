@@ -309,6 +309,19 @@ describe("Codex bulk residual inventory", () => {
     expect(await fs.readFile(file)).toEqual(before);
     expect(JSON.parse(await fs.readFile(fixture.global, "utf8"))["pinned-thread-ids"]).toContain("selected");
   });
+
+  it("explains why a rollout cannot be validated before changing bulk data", async () => {
+    const fixture = await makeFixture();
+    const directory = path.join(fixture.root, "sessions", "2026", "10", "01");
+    await fs.mkdir(directory, { recursive: true });
+    const rollout = path.join(directory, "rollout-2026-10-01T10-00-00-0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b.jsonl");
+    await fs.writeFile(rollout, '{"type":"session_meta","payload":{}}\n');
+    await expect(prepareClean(["codex"], {
+      home: fixture.home, checkOpenPaths: closed, trash: fixture.move
+    })).rejects.toThrow(/Cannot validate Codex rollout: .+ \(The first rollout line is missing a complete conversation ID\.\)/);
+    expect(await fs.readFile(rollout, "utf8")).toBe('{"type":"session_meta","payload":{}}\n');
+    expect(JSON.parse(await fs.readFile(fixture.global, "utf8"))["pinned-thread-ids"]).toContain("selected");
+  });
 });
 
 async function makeFixture() {

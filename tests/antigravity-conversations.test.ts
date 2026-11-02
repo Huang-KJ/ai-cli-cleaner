@@ -203,7 +203,6 @@ describe("Antigravity conversation cleanup", () => {
     expect(result.deleted.map((item) => item.id)).toEqual([selectedId]);
     expect(trash).toHaveBeenCalledOnce();
     await expect(readFile(path.join(backupTrash, "manifest.json"), "utf8")).resolves.toContain(selectedId);
-    expect(result.openFileCheckUnsupported).toBeUndefined();
     const database = new DatabaseSync(summaryDatabase, { readOnly: true });
     try {
       expect(database.prepare("SELECT conversation_id FROM conversation_summaries").all()).toEqual([]);
@@ -419,7 +418,6 @@ describe("Antigravity conversation cleanup", () => {
       home: fixture.home, dryRun, trash,
       checkOpenPaths: async () => ({ supported: ++checks !== 1, openPaths: [] })
     });
-    expect(result.openFileCheckUnsupported).toBe(true);
     expect(result.failures).toHaveLength(1);
     expect(result.failures[0]?.conversation).toBe(fixture.antigravity);
     expect(result.failures[0]?.error.message).toMatch(/Cannot check whether files are open/);

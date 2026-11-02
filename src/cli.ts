@@ -1,5 +1,4 @@
 import { Command, CommanderError } from "commander";
-import prettyBytes from "pretty-bytes";
 import { getProviderName as providerName, manifests, parseTargets } from "./cleaners/manifests.js";
 import type { CleanPlan } from "./cleaners/plan.js";
 import type { ProviderId } from "./cleaners/types.js";
@@ -9,7 +8,7 @@ import type {
   ConversationRecord
 } from "./conversations/types.js";
 import type { OperationInspection, OperationSummary } from "./recovery/operations.js";
-import { displayJson, displayText } from "./ui/display.js";
+import { displayJson, displayText, formatBytes } from "./ui/display.js";
 import type {
   ConversationAgentPromptOptions,
   ConversationCheckboxPromptOptions,
@@ -24,13 +23,13 @@ export interface CliDependencies {
   selectAgent: (options: ConversationAgentPromptOptions) => Promise<ProviderId | undefined>;
   checkbox: (options: ConversationCheckboxPromptOptions) => Promise<string[] | undefined>;
   assertSupportedPlatform?: () => void | Promise<void>;
-  assertAgentsStopped?: (targets: ProviderId[]) => Promise<void>;
-  doctor?: (targets: ProviderId[]) => Promise<{ ok: boolean; checks: { id: string; ok: boolean; message: string }[]; agents: unknown[] }>;
-  listRecovery?: () => Promise<OperationSummary[]>;
-  inspectRecovery?: (id: string) => Promise<OperationInspection>;
-  stopAgents?: (targets: ProviderId[]) => Promise<void>;
-  checkForUpdate?: (options: { currentVersion: string; prerelease: boolean }) => Promise<UpdateResult>;
-  installUpdate?: (release: UpdateResult) => Promise<void>;
+  assertAgentsStopped: (targets: ProviderId[]) => Promise<void>;
+  doctor: (targets: ProviderId[]) => Promise<{ ok: boolean; checks: { id: string; ok: boolean; message: string }[]; agents: unknown[] }>;
+  listRecovery: () => Promise<OperationSummary[]>;
+  inspectRecovery: (id: string) => Promise<OperationInspection>;
+  stopAgents: (targets: ProviderId[]) => Promise<void>;
+  checkForUpdate: (options: { currentVersion: string; prerelease: boolean }) => Promise<UpdateResult>;
+  installUpdate: (release: UpdateResult) => Promise<void>;
   prepareClean: (targets: ProviderId[], options: { includeMemories: boolean }) => Promise<CleanPlan>;
   discoverConversations: (targets: ProviderId[], options: { includeMemories: boolean }) => Promise<ConversationDiscovery>;
   deleteConversations: (
@@ -96,9 +95,8 @@ export async function runCli(
       }
       dependencies.log(`Agents: ${targets.join(", ")}`);
       dependencies.log(memoryNotice(options.includeMemories));
-      if (!options.verbose) dependencies.log("Details: add --verbose; use --dry-run to preview.");
+      if (!options.verbose) dependencies.log(options.dryRun ? "Details: add --verbose." : "Details: add --verbose; use --dry-run to preview.");
       if (options.forceStop && !options.dryRun) {
-        if (!dependencies.stopAgents) throw new Error("Stopping agents is not available in this environment.");
         if (!options.yes && !await dependencies.confirm({
           message: `Stop selected agents?${stopImpact(targets)}`
         })) {
@@ -110,7 +108,7 @@ export async function runCli(
       } else if (options.forceStop) {
         dependencies.log("Dry-run does not stop running agents.");
       }
-      if (!options.dryRun) await dependencies.assertAgentsStopped?.(targets);
+      if (!options.dryRun) await dependencies.assertAgentsStopped(targets);
       if (options.verbose) dependencies.log(`Cleanup scope: ${cleanScope(targets, options.includeMemories)}`);
       dependencies.log("Checking cleanup data…");
       const plan = await dependencies.prepareClean(targets, { includeMemories: options.includeMemories });
@@ -120,13 +118,13 @@ export async function runCli(
         return;
       }
       const bytes = entries.reduce((total, entry) => total + entry.sizeBytes, 0);
-      dependencies.log(`Cleanup: ${entries.length} items (${prettyBytes(bytes)}), ${plan.operations.length} index updates.`);
+      dependencies.log(`Cleanup: ${entries.length} items (${formatBytes(bytes)}), ${plan.operations.length} index updates.`);
       if (entries.some((entry) => entry.providerId === "codex" && entry.pattern === "~/Documents/Codex")) {
         dependencies.warn("Includes ~/Documents/Codex/YYYY-MM-DD folders and all files inside, including project files.");
       }
       if (options.verbose) {
         for (const entry of entries) {
-          dependencies.log(`[${displayText(entry.providerName)}] ${displayText(entry.path)} (${prettyBytes(entry.sizeBytes)})`);
+          dependencies.log(`[${displayText(entry.providerName)}] ${displayText(entry.path)} (${formatBytes(entry.sizeBytes)})`);
         }
         for (const operation of plan.operations) dependencies.log(`Index updates: ${displayText(operation)}`);
       }
@@ -142,7 +140,7 @@ export async function runCli(
         dependencies.log("Deletion cancelled.");
         return;
       }
-      await dependencies.assertAgentsStopped?.(targets);
+      await dependencies.assertAgentsStopped(targets);
       dependencies.log("Cleaning…");
       const result = await plan.execute();
       dependencies.log(`Moved to Trash: ${result.deleted.length} items; failed: ${result.failures.length}.`);
@@ -158,14 +156,10 @@ export async function runCli(
     .option("-t, --target <target>", `One agent: ${manifests.map((manifest) => manifest.id).join(", ")}`)
     .option("--dry-run", "Preview selected conversations without deleting original data.", false)
     .option("--include-memories", "Also delete supported memory records belonging to selected conversations.", false)
-    .option("--allow-running", "Deprecated: deletion requires stopped agents; accepted only with --dry-run.", false)
     .option("--timezone <zone>", "IANA time zone for timestamps, such as UTC; defaults to the system time zone.")
     .option("--force-stop", "Stop selected agents before deletion; may close their desktop apps.", false)
-    .action(async (options: { target?: string; dryRun: boolean; includeMemories: boolean; forceStop: boolean; allowRunning: boolean; timezone?: string }) => {
+    .action(async (options: { target?: string; dryRun: boolean; includeMemories: boolean; forceStop: boolean; timezone?: string }) => {
       await assertPlatform();
-      if (options.allowRunning && !options.dryRun) {
-        throw new Error("--allow-running no longer permits deletion. Close the selected agents, then retry without --allow-running; use --force-stop to request confirmed shutdown.");
-      }
       const timezone = validateTimezone(options.timezone);
       const targets = parseTargets(options.target);
       if (targets && targets.length !== 1) throw new Error("Conversation selection requires exactly one agent in --target.");
@@ -178,7 +172,7 @@ export async function runCli(
         });
         if (!target) return;
         dependencies.log(memoryNotice(options.includeMemories, true));
-        if (!options.dryRun && !options.forceStop) await dependencies.assertAgentsStopped?.([target]);
+        if (!options.dryRun && !options.forceStop) await dependencies.assertAgentsStopped([target]);
         const discovery = await dependencies.discoverConversations([target], { includeMemories: options.includeMemories });
         for (const warning of discovery.warnings) dependencies.warn(`Warning: ${displayText(warning)}`);
         if (discovery.conversations.some((conversation) => conversation.providerId !== target)) {
@@ -223,13 +217,12 @@ export async function runCli(
           continue;
         }
         if (options.forceStop && !options.dryRun) {
-          if (!dependencies.stopAgents) throw new Error("Stopping agents is not available in this environment.");
           dependencies.log(`Stopping running agents for ${providerName(target)}…`);
           await dependencies.stopAgents([target]);
         } else if (options.forceStop) {
           dependencies.log("Dry-run does not stop running agents.");
         }
-        if (!options.dryRun) await dependencies.assertAgentsStopped?.([target]);
+        if (!options.dryRun) await dependencies.assertAgentsStopped([target]);
         dependencies.log(options.dryRun ? "Checking selected conversations…" : "Deleting selected conversations…");
         const result = await dependencies.deleteConversations(selected, {
           dryRun: options.dryRun, includeMemories: options.includeMemories
@@ -247,7 +240,6 @@ export async function runCli(
     .action(async (options: { all?: boolean; target?: string; json: boolean }) => {
       if (options.all && options.target !== undefined) throw new Error("Use either --all or --target, not both.");
       const targets = parseTargets(options.target) ?? manifests.map((manifest) => manifest.id);
-      if (!dependencies.doctor) throw new Error("Diagnostics are not available in this environment.");
       const report = await dependencies.doctor(targets);
       if (options.json) dependencies.log(displayJson(report));
       else {
@@ -263,7 +255,6 @@ export async function runCli(
     .option("--prerelease", "Include published prereleases, such as beta versions.", false)
     .action(async (options: { install: boolean; prerelease: boolean }) => {
       if (options.install) await assertPlatform();
-      if (!dependencies.checkForUpdate) throw new Error("Update checks are not available in this environment.");
       dependencies.log("Checking published GitHub releases…");
       const release = await dependencies.checkForUpdate({ currentVersion: version, prerelease: options.prerelease });
       dependencies.log(`Installed: ${displayText(release.currentVersion)}; latest ${options.prerelease ? "release" : "stable release"}: ${displayText(release.latestVersion)}.`);
@@ -276,7 +267,6 @@ export async function runCli(
         dependencies.log(`To install, run: ai-cleaner update --install${options.prerelease ? " --prerelease" : ""}`);
         return;
       }
-      if (!dependencies.installUpdate) throw new Error("Installing updates is not available in this environment.");
       dependencies.log("Verifying the release archive and updating this installation…");
       await dependencies.installUpdate(release);
       dependencies.log(`Updated to ${displayText(release.latestVersion)}. Run ai-cleaner --version to confirm.`);
@@ -290,7 +280,6 @@ export async function runCli(
     .option("--timezone <zone>", "IANA time zone for timestamps; defaults to the system time zone.")
     .action(async (options: { json: boolean; timezone?: string }) => {
       const timezone = validateTimezone(options.timezone);
-      if (!dependencies.listRecovery) throw new Error("Recovery records are not available in this environment.");
       const records = await dependencies.listRecovery();
       if (options.json) dependencies.log(displayJson(records));
       else if (!records.length) dependencies.log("No cleanup operations recorded.");
@@ -302,7 +291,6 @@ export async function runCli(
     .description("Inspect an operation and its backups; does not restore data.")
     .option("--json", "Print JSON, including recovery paths.", false)
     .action(async (id: string, options: { json: boolean }) => {
-      if (!dependencies.inspectRecovery) throw new Error("Recovery inspection is not available in this environment.");
       const report = await dependencies.inspectRecovery(id);
       dependencies.log(displayJson(options.json ? report : { operation: report.operation, backups: report.backups, claims: report.claims }));
       if (!options.json) for (const instruction of report.instructions) dependencies.log(displayText(instruction));
@@ -338,7 +326,7 @@ function stopImpact(targets: ProviderId[]): string {
 
 function formatConversationChoice(conversation: ConversationRecord, timezone: string): string {
   const date = formatDate(conversation.updatedAt, timezone);
-  const size = conversation.sizeKnown === false ? "size unknown" : prettyBytes(conversation.sizeBytes);
+  const size = conversation.sizeKnown === false ? "size unknown" : formatBytes(conversation.sizeBytes);
   return `${date}  ${displayText(conversation.title)}  (${size})`;
 }
 

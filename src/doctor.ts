@@ -4,6 +4,7 @@ import path from "node:path";
 import { assertDefaultDataRoots } from "./cleaners/manifests.js";
 import type { ProviderId } from "./cleaners/types.js";
 import { findRunningAgents, type StoppedAgent } from "./fs/agent-processes.js";
+import { claimHelperBinary } from "./fs/claims.js";
 import { systemTrashBinary } from "./fs/trash.js";
 import { pathExists } from "./fs/paths.js";
 import { getPlatformSupport } from "./platform.js";
@@ -59,22 +60,23 @@ export async function runDoctor(targets: ProviderId[], options: DoctorOptions = 
     { id: "platform", ok: platformSupport.supported, message: platformSupport.message },
     { id: "node", ok: supportsNode(version, range), message: `Node.js ${version}; supported: ${range}` }
   ];
-  for (const name of ["lsof", "ps", "trash"] as const) {
+  const tools = {
+    lsof: { label: "lsof", binary: () => systemTools.lsof },
+    ps: { label: "ps", binary: () => systemTools.ps },
+    trash: { label: "Bundled Trash helper", binary: systemTrashBinary },
+    // 每次刪除都先透過 claim helper 搬入私有復原區，缺少時刪除必定失敗。
+    claims: { label: "Bundled claim helper", binary: claimHelperBinary }
+  };
+  for (const [name, tool] of Object.entries(tools)) {
     let ok = false;
     try {
-      ok = await available(name === "trash" ? systemTrashBinary() : systemTools[name]);
+      ok = await available(tool.binary());
     } catch {
       // 可用性檢查不執行工具，也不回傳含路徑的系統錯誤。
     }
-    checks.push({ id: `tool:${name}`, ok, message: `${name === "trash" ? "Bundled Trash helper" : name}: ${ok ? "executable available" : "executable missing or not permitted"}` });
+    checks.push({ id: `tool:${name}`, ok, message: `${tool.label}: ${ok ? "executable available" : "executable missing or not permitted"}` });
   }
-  let running: StoppedAgent[] = [];
-  let processCheck = true;
-  try {
-    running = await (options.findAgents ?? ((selected) => findRunningAgents(selected, { platform })))(targets);
-  } catch {
-    processCheck = false;
-  }
+  const findAgents = options.findAgents ?? ((selected: ProviderId[]) => findRunningAgents(selected, { platform }));
   const agents: DoctorReport["agents"] = [];
   for (const target of new Set(targets)) {
     let rootsOk = true;
@@ -97,6 +99,14 @@ export async function runDoctor(targets: ProviderId[], options: DoctorOptions = 
       roots.push({ path: root, exists: present });
     }
     checks.push({ id: `roots:${target}`, ok: rootsOk, message: `${rootMessage}; ${roots.map((root) => `${root.path} (${root.exists ? "exists" : "not created"})`).join(", ")}` });
+    // 逐一代理檢查，與 clean/conversations 一致：無法確認的程序只影響其所屬代理。
+    let running: StoppedAgent[] = [];
+    let processCheck = true;
+    try {
+      running = await findAgents([target]);
+    } catch {
+      processCheck = false;
+    }
     // 明確挑選輸出欄位，避免其他來源夾帶命令列或帳號資訊。
     const selected = running.filter((item) => item.providerId === target).map((item) => ({ pid: item.pid, providerId: item.providerId }));
     checks.push({ id: `agents:${target}`, ok: processCheck && selected.length === 0,

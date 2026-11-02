@@ -171,7 +171,7 @@ describe("local conversation deletion safety", () => {
     expect(result.failures).toHaveLength(1);
     expect(result.deleted).toEqual([]);
     expect(trash).not.toHaveBeenCalled();
-    expect(result.openFileCheckUnsupported).toBe(true);
+    expect(result.failures[0]?.error.message).toMatch(/Cannot check whether files are open/);
   });
 
   it("rejects a project directory under HOME as local conversation data", async () => {

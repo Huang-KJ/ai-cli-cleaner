@@ -403,10 +403,10 @@ describe("package and CI contract", () => {
 
       const conversationHelp = runInstalledCli(installedExecutable, prefix, isolatedEnv, childTimeout(), "conversations", "--help");
       expectSuccessful(conversationHelp);
-      for (const option of ["--target", "--dry-run", "--force-stop", "--allow-running", "--timezone"]) {
+      for (const option of ["--target", "--dry-run", "--force-stop", "--timezone"]) {
         expect(conversationHelp.stdout).toContain(option);
       }
-      for (const option of ["--search", "--workspace", "--older-than", "--min-size", "--force-open", "--yes"]) {
+      for (const option of ["--search", "--workspace", "--older-than", "--min-size", "--force-open", "--yes", "--allow-running"]) {
         expect(conversationHelp.stdout).not.toContain(option);
       }
       expect(conversationHelp.stderr).toBe("");

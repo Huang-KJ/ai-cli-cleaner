@@ -4,6 +4,9 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    # 新版本需公開一段時間再提議，降低被入侵套件剛發布即進入打包依賴的風險；安全性更新不受此限制。
+    cooldown:
+      default-days: 7
     ignore:
       # 型別維持最低支援的 Node 主版本，避免誤用較新的 API。
       - dependency-name: "@types/node"
@@ -12,3 +15,5 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7

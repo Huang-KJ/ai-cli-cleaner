@@ -57,19 +57,17 @@
     "prepack": "npm run check"
   },
   "dependencies": {
-    "@inquirer/core": "^12.0.4",
-    "commander": "^15.0.0",
-    "pretty-bytes": "^7.2.0"
+    "@inquirer/core": "^12.0.5",
+    "commander": "^15.0.0"
   },
   "bundleDependencies": [
     "@inquirer/core",
-    "commander",
-    "pretty-bytes"
+    "commander"
   ],
   "devDependencies": {
     "@types/node": "^22.20.5",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.4"
+    "vitest": "^5.0.5"
   },
   "os": [
     "darwin"

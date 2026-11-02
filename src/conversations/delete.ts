@@ -62,15 +62,15 @@ export async function deleteConversations(
       if (conversation.disabledReason) throw new Error(conversation.disabledReason);
       if (conversation.providerId === "claude") throw new Error(CLAUDE_SELECTED_REFUSAL);
       if (conversation.providerId === "antigravity") {
-        await deleteAntigravityConversation(conversation, options, result);
+        await deleteAntigravityConversation(conversation, options);
       } else if (conversation.providerId === "codex" && conversation.deleteStrategy.kind === "local") {
         await deleteCodexConversations([conversation], options, result, false);
         continue;
       } else if (conversation.deleteStrategy.kind === "indexed") {
-        await deleteIndexedConversation(conversation, options, result, options.dryRun
+        await deleteIndexedConversation(conversation, options, options.dryRun
           ? unique.filter((item) => item.providerId === conversation.providerId).map((item) => item.id) : undefined);
       } else {
-        await deleteCopilotConversation(conversation, options, result);
+        await deleteCopilotConversation(conversation, options);
       }
       (options.dryRun ? result.previewed : result.deleted).push(conversation);
     } catch (error) {
@@ -85,7 +85,6 @@ export async function deleteConversations(
 async function deleteIndexedConversation(
   conversation: ConversationRecord,
   options: DeleteConversationOptions,
-  result: ConversationDeleteResult,
   previewIds?: string[]
 ): Promise<void> {
   const home = options.home ?? homedir();
@@ -102,7 +101,6 @@ async function deleteIndexedConversation(
   if (options.dryRun) return;
   const assertClosed = async (): Promise<void> => {
     const check = await options.checkOpenPaths(guards);
-    if (!check.supported) result.openFileCheckUnsupported = true;
     if (!check.supported || check.openPaths.length > 0) {
       throw new Error("Deletion refused: conversation data is open or its open-file status cannot be checked; close the relevant agents, then retry.");
     }
@@ -114,7 +112,6 @@ async function deleteIndexedConversation(
     await validateEntries(entries);
     await plan.prepareRecovery();
     const cleaned = await cleanEntries(entries, { checkOpenPaths: options.checkOpenPaths, trash: options.trash });
-    if (cleaned.openFileCheckUnsupported) result.openFileCheckUnsupported = true;
     deletedPaths = cleaned.deleted.map((entry) => entry.path);
     if (cleaned.failures.length || cleaned.scanErrors.length) {
       throw new Error([...cleaned.failures.map((failure) => failure.error.message),
@@ -132,8 +129,7 @@ async function deleteIndexedConversation(
 
 async function deleteCopilotConversation(
   conversation: ConversationRecord,
-  options: DeleteConversationOptions,
-  result: ConversationDeleteResult
+  options: DeleteConversationOptions
 ): Promise<void> {
   const strategy = conversation.deleteStrategy;
   if (strategy.kind !== "local") throw new Error("The conversation does not use a local deletion strategy.");
@@ -157,7 +153,6 @@ async function deleteCopilotConversation(
   await assertSafeHomePaths(guardPaths, home, "inspect");
   if (!options.dryRun) {
     const guardCheck = await options.checkOpenPaths(ownedGuardPaths);
-    if (!guardCheck.supported) result.openFileCheckUnsupported = true;
     if (!guardCheck.supported) {
       throw new Error("Cannot check whether files are open; close the relevant agents, then retry.");
     }
@@ -165,7 +160,6 @@ async function deleteCopilotConversation(
       throw new Error(`Refusing to delete open files: ${guardCheck.openPaths.join(", ")}`);
     }
     const metadataCheck = await options.checkOpenPaths(metadataPaths);
-    if (!metadataCheck.supported) result.openFileCheckUnsupported = true;
     if (!metadataCheck.supported) throw new Error("Cannot check whether index files are open.");
     if (metadataCheck.openPaths.length > 0) {
       throw new Error(`Refusing to delete open files: ${metadataCheck.openPaths.join(", ")}`);
@@ -189,7 +183,6 @@ async function deleteCopilotConversation(
       checkOpenPaths: options.checkOpenPaths,
       trash: options.trash
     });
-    if (cleanResult.openFileCheckUnsupported) result.openFileCheckUnsupported = true;
     deletedPaths = cleanResult.deleted.map((entry) => entry.path);
     if (cleanResult.failures.length > 0 || cleanResult.scanErrors.length > 0) {
       throw attachMetadataFailure(new Error([
@@ -199,7 +192,6 @@ async function deleteCopilotConversation(
     }
     await plan.validate();
     const metadataCheck = await options.checkOpenPaths(metadataPaths);
-    if (!metadataCheck.supported) result.openFileCheckUnsupported = true;
     if (!metadataCheck.supported || metadataCheck.openPaths.length > 0) {
       throw new Error("Pre-update check failed: metadata is open or its open-file status cannot be checked.");
     }

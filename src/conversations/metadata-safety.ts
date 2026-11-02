@@ -9,7 +9,6 @@ import { containsPath, getCanonicalPath, pathExists } from "../fs/paths.js";
 import { createTemporaryDirectory, discardTemporary } from "../fs/temporary.js";
 import type { TrashFn } from "../cleaners/clean.js";
 import type { DeletionError, DeletionFailureDetails } from "./types.js";
-import { sqliteSelectionSnapshot, type SqliteSelection } from "./sqlite.js";
 import { claimPaths, snapshotClaimIdentity } from "../fs/claims.js";
 
 type MetadataKind = "sqlite" | "json" | "jsonl";
@@ -35,43 +34,11 @@ export interface MetadataInventory {
   providerRoot: string;
   canonicalProviderRoot: string;
   entries: MetadataEntry[];
+  // 預覽時代理可能仍在寫入；SQLite 只比對檔案身分，不比對內容。
   liveSqlite?: boolean;
   // 僅供唯讀快照與整庫搬移來源使用，原檔重寫維持完整比對。
   allowShmBookkeeping?: boolean;
   privateCopies?: boolean;
-  sqliteRecoveryGuards?: Map<string, SqliteRecoveryGuard>;
-}
-
-interface SqliteRecoveryGuard {
-  select: SqliteSelection;
-  snapshot?: string;
-}
-
-export function guardSqliteRecovery(
-  inventory: MetadataInventory,
-  file: string,
-  select: SqliteSelection
-): void {
-  const guards = inventory.sqliteRecoveryGuards ??= new Map();
-  const target = path.resolve(file);
-  const original = guards.get(target)?.select;
-  guards.set(target, { select: original ? (database: DatabaseSync) => {
-    const first = original(database);
-    const second = select(database);
-    return (table: string, row: Record<string, unknown>) => first(table, row) || second(table, row);
-  } : select });
-}
-
-export function assertSqliteRecoveryUnchanged(
-  database: DatabaseSync,
-  file: string,
-  inventory?: MetadataInventory
-): void {
-  const guard = inventory?.sqliteRecoveryGuards?.get(path.resolve(file));
-  if (guard?.snapshot !== undefined &&
-    sqliteSelectionSnapshot(database, guard.select(database)) !== guard.snapshot) {
-    throw new Error(`Selected SQLite data changed after the recovery backup; rescan: ${file}`);
-  }
 }
 
 interface RecoveryBackup {
@@ -337,7 +304,6 @@ export async function writeStagedMetadata(
     const completed = await createMetadataInventory([...copies.values()].filter((file) => !sqliteSidecar.test(file)), directory,
       await getCanonicalPath(home));
     const published: MetadataInventory = { ...inventory, liveSqlite: false, privateCopies: false,
-      sqliteRecoveryGuards: undefined,
       entries: inventory.entries.map((entry) => {
         const copy = completed.entries.find((candidate) => candidate.path === copies.get(entry.path));
         if (!copy) throw new Error(`Published metadata mapping is incomplete: ${entry.path}`);
@@ -425,15 +391,6 @@ export async function createRecoveryBackup(
       }
       await fs.chmod(backupPath, 0o600);
       await syncPrivateFile(home, backupPath);
-      const guard = inventory.sqliteRecoveryGuards?.get(originalPath);
-      if (guard) {
-        const database = new DatabaseSync(backupPath, { readOnly: true });
-        try {
-          guard.snapshot = sqliteSelectionSnapshot(database, guard.select(database));
-        } finally {
-          database.close();
-        }
-      }
       backupEntries.push({
         originalPath,
         backupPath,
@@ -577,13 +534,6 @@ async function assertEntryUnchanged(
       if (Boolean(entry.identity) !== Boolean(stat) ||
         (entry.identity && stat && (stat.dev !== entry.identity.device || stat.ino !== entry.identity.inode))) {
         throw new Error(`SQLite database identity changed; rescan: ${entry.path}`);
-      }
-      if (inventory.sqliteRecoveryGuards?.get(entry.path)?.snapshot !== undefined) {
-        await withPrivateReadDatabase(inventory.trustedRoot, inventory.providerRoot, entry.path, (database) => {
-          // 同一個讀取交易避免把並行提交的不同狀態混成快照。
-          database.exec("BEGIN");
-          assertSqliteRecoveryUnchanged(database, entry.path, inventory);
-        });
       }
     }
     return;

@@ -53,6 +53,5 @@ export interface CleanFailure {
 export interface CleanResult {
   deleted: ScanEntry[];
   scanErrors: ScanEntry[];
-  openFileCheckUnsupported: boolean;
   failures: CleanFailure[];
 }

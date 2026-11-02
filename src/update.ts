@@ -71,6 +71,8 @@ export async function checkForUpdate(options: CheckOptions = {}): Promise<Update
   if (!parseVersion(currentVersion)) throw new Error("Invalid release version.");
   const transport = options.transport ?? request;
   let chosen: { value: Record<string, unknown>; number: string } | undefined;
+  // 穩定通道沒有版本時，據實指出已發布的 prerelease，而非推測為私有 repository。
+  let skippedPrerelease: string | undefined;
   let totalBytes = 0;
   for (let page = 1; page <= pageLimit; page++) {
     const body = await bounded(transport, `${api}/releases?per_page=100&page=${page}`,
@@ -84,7 +86,11 @@ export async function checkForUpdate(options: CheckOptions = {}): Promise<Update
           !Number.isFinite(Date.parse(value.published_at)) || typeof value.tag_name !== "string") continue;
       const number = value.tag_name.replace(/^v/, "");
       const parsed = parseVersion(number);
-      if (!parsed || typeof value.prerelease !== "boolean" || (!options.prerelease && (value.prerelease || parsed.prerelease.length))) continue;
+      if (!parsed || typeof value.prerelease !== "boolean") continue;
+      if (!options.prerelease && (value.prerelease || parsed.prerelease.length)) {
+        if (!skippedPrerelease || compareVersions(number, skippedPrerelease) > 0) skippedPrerelease = number;
+        continue;
+      }
       if (!chosen || compareVersions(number, chosen.number) > 0) chosen = { value, number };
     }
     if (releases.length < 100) break;
@@ -92,7 +98,9 @@ export async function checkForUpdate(options: CheckOptions = {}): Promise<Update
       throw new Error("GitHub release history exceeded the update check limit. Check the repository releases manually; the latest version could not be determined safely.");
     }
   }
-  if (!chosen) throw new Error(`No published ${options.prerelease ? "" : "stable "}GitHub release is available. Private repositories and draft releases cannot be updated anonymously. Try --prerelease for a published preview, or install a published release manually.`);
+  if (!chosen) throw new Error(skippedPrerelease
+    ? `No stable GitHub release is published yet; the latest published prerelease is ${skippedPrerelease}. Run ai-cleaner update --prerelease to check prereleases.`
+    : `No published ${options.prerelease ? "" : "stable "}GitHub release is available. Private repositories and draft releases cannot be updated anonymously. Try --prerelease for a published preview, or install a published release manually.`);
   const rawUrl = `https://github.com/${repository}/releases/tag/${chosen.value.tag_name}`;
   const releaseUrl = `https://github.com/${repository}/releases/tag/${encodeURIComponent(String(chosen.value.tag_name))}`;
   if (![rawUrl, releaseUrl].includes(String(chosen.value.html_url)) || !Array.isArray(chosen.value.assets)) throw new Error("Invalid GitHub release metadata.");

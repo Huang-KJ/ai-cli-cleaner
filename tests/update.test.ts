@@ -100,6 +100,13 @@ describe("GitHub release update checks", () => {
     expect((await checkForUpdate({ currentVersion: "0.1.0-beta.1", prerelease: true, transport })).latestVersion).toBe("2.0.0-beta.1");
     expect(transport).toHaveBeenCalledWith(`${api}/releases?per_page=100&page=1`, expect.objectContaining({ maxBytes: 2097152 }));
   });
+  it("points beta-only histories to the prerelease channel instead of suggesting a private repository", async () => {
+    const transport = metadata([release("0.1.0-beta.3"), release("0.1.0-beta.4"), release("0.2.0-beta.1", { draft: true })]);
+    await expect(checkForUpdate({ currentVersion: "0.1.0-beta.4", transport })).rejects.toThrow(
+      "No stable GitHub release is published yet; the latest published prerelease is 0.1.0-beta.4. Run ai-cleaner update --prerelease to check prereleases.");
+    await expect(checkForUpdate({ currentVersion: "0.1.0-beta.4", transport: metadata([]) }))
+      .rejects.toThrow(/Private repositories and draft releases cannot be updated anonymously/);
+  });
   it("finds a stable release after more than 100 published beta releases", async () => {
     const betas = Array.from({ length: 100 }, (_, index) => release(`3.0.0-beta.${index}`));
     const transport: UpdateTransport = vi.fn(async (url) => Buffer.from(JSON.stringify(url.endsWith("page=1") ? betas : [release("2.0.0-beta.1"), release("1.2.0")])));
@@ -167,7 +174,10 @@ describe("GitHub release update checks", () => {
     expect((await checkForUpdate({ currentVersion: "1.0.0", transport: metadata([release()]) })).available).toBe(false);
   });
   it("explains unavailable private/draft or stable releases", async () => {
-    await expect(checkForUpdate({ currentVersion: "0.1.0-beta.1", transport: metadata([release("1.0.0-beta.1")]) })).rejects.toThrow("Private repositories and draft releases");
+    await expect(checkForUpdate({ currentVersion: "0.1.0-beta.1", transport: metadata([release("1.0.0-beta.1")]) }))
+      .rejects.toThrow("No stable GitHub release is published yet; the latest published prerelease is 1.0.0-beta.1.");
+    await expect(checkForUpdate({ currentVersion: "0.1.0-beta.1", transport: metadata([release("1.0.0", { draft: true })]) }))
+      .rejects.toThrow("Private repositories and draft releases");
     await expect(checkForUpdate({ currentVersion: "1.0.0", transport: metadata({ message: "Not Found" }) })).rejects.toThrow("invalid release metadata");
   });
   it("rejects invalid JSON and oversized metadata", async () => {

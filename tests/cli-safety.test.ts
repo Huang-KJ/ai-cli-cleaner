@@ -66,8 +66,8 @@ describe("bulk cleanup CLI", () => {
   it.each([
     ["clean", "--all", "--force-stop"],
     ["clean", "--target", "codex", "--dry-run", "--force-stop"],
-    ["conversations", "--target", "codex", "--allow-running"],
-    ["conversations", "--target", "codex", "--dry-run", "--allow-running"]
+    ["conversations", "--target", "codex"],
+    ["conversations", "--target", "codex", "--dry-run"]
   ])("rejects unsupported platforms before cleanup or discovery: %s", async (...args) => {
     const test = fixture();
     const assertSupportedPlatform = vi.fn(() => { throw new Error("目前僅支援 macOS 26 以上版本。"); });
@@ -222,7 +222,8 @@ describe("bulk cleanup CLI", () => {
     test.plan.operations = ["private-index-update"];
     expect(await command(["clean", "--all", "--dry-run"], test.dependencies)).toBe(0);
     expect(test.logs.join("\n")).toContain("Cleanup: 100 items (1 kB), 1 index updates.");
-    expect(test.logs.join("\n")).toContain("--verbose");
+    expect(test.logs).toContain("Details: add --verbose.");
+    expect(test.logs.join("\n")).not.toContain("use --dry-run to preview");
     expect(test.logs.join("\n")).not.toContain("/fixture/");
     expect(test.logs.join("\n")).not.toContain("private-index-update");
     expect(test.logs.join("\n")).not.toContain("Cleanup scope:");
@@ -448,24 +449,21 @@ describe("public beta CLI guards", () => {
     expect(await command(["conversations", "--target", "codex"], test.deps)).toBe(0);
     expect(test.events).toEqual(["guard", "discover", "confirm", "guard", "delete"]);
   });
-  it("rejects --allow-running before discovery, confirmation, or deletion", async () => {
+  it("keeps dry-run previews read-only without requiring stopped agents", async () => {
     const test = publicCliFixture();
     test.deps.assertAgentsStopped = async () => { throw new Error("Agent 仍在執行"); };
-    expect(await command(["conversations", "--target", "codex", "--allow-running"], test.deps)).toBe(1);
-    expect(test.events).toEqual([]);
-    expect(test.output.join("\n")).toContain("Close the selected agents");
-  });
-  it("keeps --allow-running dry-run read-only without requiring stopped agents", async () => {
-    const test = publicCliFixture();
-    test.deps.assertAgentsStopped = async () => { throw new Error("Agent 仍在執行"); };
-    expect(await command(["conversations", "--target", "codex", "--allow-running", "--dry-run"], test.deps)).toBe(0);
+    expect(await command(["conversations", "--target", "codex", "--dry-run"], test.deps)).toBe(0);
     expect(test.events).toEqual(["discover", "preview"]);
   });
-  it("rejects allow-running with force-stop and rejects it for bulk deletion", async () => {
+  it.each([
+    ["conversations", "--target", "codex", "--allow-running"],
+    ["conversations", "--target", "codex", "--allow-running", "--dry-run"],
+    ["clean", "--target", "codex", "--allow-running"]
+  ])("rejects the removed --allow-running option before discovery or deletion: %s", async (...args) => {
     const test = publicCliFixture();
-    expect(await command(["conversations", "--target", "codex", "--allow-running", "--force-stop"], test.deps)).toBe(1);
-    expect(await command(["clean", "--target", "codex", "--allow-running"], test.deps)).toBe(1);
+    expect(await command(args, test.deps)).toBe(1);
     expect(test.events).toEqual([]);
+    expect(test.output.join("\n")).toContain("unknown option '--allow-running'");
   });
   it("accepts an explicit timezone and reports an invalid one before discovery", async () => {
     const test = publicCliFixture();

@@ -6,7 +6,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   findOpenPaths,
   getLsofFailureResult,
-  parseLsofOutput
+  parseLsofOutput,
+  parseUnreadableMountWarnings
 } from "../src/fs/open-files.js";
 
 const tempDirectories: string[] = [];
@@ -88,6 +89,38 @@ describe("open file detection", () => {
     expect(getLsofFailureResult({ code: 2, stdout: "n/tmp/open.db\n" })).toBeUndefined();
     expect(getLsofFailureResult({ code: 1, stdout: Buffer.from("unrecognized"), stderr: 42 }))
       .toEqual({ supported: true, stdout: "" });
+  });
+
+  it("recognizes only complete lsof warnings about file systems it cannot stat", () => {
+    // 其他帳號掛載的磁碟映像會讓 lsof 每次都輸出此警告。
+    const warning = (mount: string) => `lsof: WARNING: can't stat() hfs file system ${mount}\n` +
+      "      Output information may be incomplete.\n      assuming \"dev=100000c\" from mount table\n";
+    const other = "/private/var/folders/zz/other-user/T/Update Image";
+    expect(parseUnreadableMountWarnings("")).toEqual([]);
+    expect(parseUnreadableMountWarnings(warning(other))).toEqual([other]);
+    expect(parseUnreadableMountWarnings(`${warning(other)}${warning("/Volumes/Share")}`)).toEqual([other, "/Volumes/Share"]);
+    expect(parseUnreadableMountWarnings(`${warning(other)}lsof: status error on /tmp/state.db: Permission denied\n`)).toBeUndefined();
+    expect(parseUnreadableMountWarnings("      Output information may be incomplete.\n")).toBeUndefined();
+    expect(parseUnreadableMountWarnings("lsof: WARNING: can't stat() hfs file system relative/mount\n")).toBeUndefined();
+    expect(getLsofFailureResult({ code: 1, stdout: "", stderr: warning(other) }))
+      .toEqual({ supported: true, stdout: "", unreadableMounts: [other] });
+  });
+
+  it("ignores unreadable mounts only when they are unrelated to the checked paths", async () => {
+    const root = await fixtureTemp(path.join(tmpdir(), "ai-cli-cleaner-open-"));
+    tempDirectories.push(root);
+    const directory = path.join(root, "sessions");
+    const file = path.join(root, "state.db");
+    await mkdir(directory);
+    await writeFile(file, "db");
+    const canonicalRoot = await realpath(root);
+    const check = (mount: string) => findOpenPaths([file, directory], "darwin",
+      vi.fn(async () => ({ supported: true, stdout: "", unreadableMounts: [mount] })));
+
+    await expect(check("/private/var/folders/zz/other-user/T/Update Image")).resolves.toEqual({ supported: true, openPaths: [] });
+    await expect(check(canonicalRoot)).resolves.toEqual({ supported: false, openPaths: [] });
+    await expect(check(path.join(canonicalRoot, "sessions", "mounted"))).resolves.toEqual({ supported: false, openPaths: [] });
+    await expect(check("/")).resolves.toEqual({ supported: false, openPaths: [] });
   });
 
   it("checks large file selections in bounded batches and retains late open results", async () => {

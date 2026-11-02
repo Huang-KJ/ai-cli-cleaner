@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runCli, type CliDependencies } from "../src/cli.js";
+import { createCliTestFixture, runCliCommand } from "./helpers/cli.js";
 
 type Report = { ok: boolean; checks: { id: string; ok: boolean; message: string }[]; agents: { providerId: string; roots: { path: string; exists: boolean }[]; running: { pid: number; providerId: string }[] }[] };
 type Doctor = (targets: string[], options: {
@@ -27,7 +27,32 @@ describe("doctor read-only checks", () => {
     expect(report.ok).toBe(true);
     expect(report.agents).toEqual([{ providerId: "codex", roots: [{ path: "~/.codex", exists: true }], running: [] }]);
     expect(JSON.stringify(report)).not.toContain("private-name");
-    expect(report.checks.map((item) => item.id)).toEqual(expect.arrayContaining(["platform", "node", "tool:lsof", "tool:ps", "tool:trash", "roots:codex", "agents:codex"]));
+    expect(report.checks.map((item) => item.id)).toEqual(expect.arrayContaining(["platform", "node", "tool:lsof", "tool:ps", "tool:trash", "tool:claims", "roots:codex", "agents:codex"]));
+  });
+  it("verifies the bundled claim helper that every deletion depends on", async () => {
+    const doctor = await loadDoctor();
+    const checked: string[] = [];
+    const report = await doctor(["codex"], { ...options(), executableAvailable: async (value) => {
+      checked.push(value);
+      return !value.endsWith("/vendor/macos-claims");
+    } });
+    expect(checked.some((value) => value.endsWith("/vendor/macos-claims"))).toBe(true);
+    expect(report.checks.find((check) => check.id === "tool:claims")).toEqual({
+      id: "tool:claims", ok: false, message: "Bundled claim helper: executable missing or not permitted"
+    });
+    expect(report.ok).toBe(false);
+  });
+  it("attributes an unverifiable process check to its own agent", async () => {
+    const doctor = await loadDoctor();
+    const report = await doctor(["codex", "claude"], { ...options(), findAgents: async (targets) => {
+      if (targets.includes("claude")) throw new Error("/Users/private-name unconfirmed claude");
+      return [];
+    } });
+    expect(report.checks.find((check) => check.id === "agents:codex")).toMatchObject({ ok: true });
+    expect(report.checks.find((check) => check.id === "agents:claude")).toMatchObject({
+      ok: false, message: "claude: cannot verify process status; cleanup will stop"
+    });
+    expect(JSON.stringify(report)).not.toContain("private-name");
   });
   it("rejects custom roots without including their values", async () => {
     const doctor = await loadDoctor();
@@ -73,20 +98,15 @@ describe("doctor read-only checks", () => {
     expect(report.agents[0]!.running).toEqual([{ pid: 123, providerId: "codex" }]);
   });
   it("doctor CLI filters targets, writes JSON, and never prepares conversation content", async () => {
-    const output: string[] = [];
-    let contentReads = 0;
     let targets: unknown;
-    const dependencies: CliDependencies & { doctor: (selected: unknown) => Promise<Report> } = {
-      confirm: async () => { throw new Error("不可確認"); }, selectAgent: async () => undefined, checkbox: async () => [],
-      prepareClean: async () => { contentReads++; throw new Error("不可讀內容"); },
-      discoverConversations: async () => { contentReads++; return { conversations: [], warnings: [] }; },
-      deleteConversations: async () => { throw new Error("不可刪除"); },
-      doctor: async (selected) => { targets = selected; return { ok: true, checks: [], agents: [] }; },
-      log: (value) => output.push(value), warn: (value) => output.push(value), error: (value) => output.push(value)
-    };
-    expect(await runCli(["node", "cleaner", "doctor", "--target", "codex,grok", "--json"], "test", dependencies)).toBe(0);
+    const test = createCliTestFixture({
+      doctor: async (selected) => { targets = selected; return { ok: true, checks: [], agents: [] }; }
+    });
+    expect(await runCliCommand(["doctor", "--target", "codex,grok", "--json"], test.dependencies)).toBe(0);
     expect(targets).toEqual(["codex", "grok"]);
-    expect(JSON.parse(output[0]!)).toEqual({ ok: true, checks: [], agents: [] });
-    expect(contentReads).toBe(0);
+    expect(JSON.parse(test.output[0]!)).toEqual({ ok: true, checks: [], agents: [] });
+    expect(test.dependencies.prepareClean).not.toHaveBeenCalled();
+    expect(test.dependencies.discoverConversations).not.toHaveBeenCalled();
+    expect(test.dependencies.deleteConversations).not.toHaveBeenCalled();
   });
 });

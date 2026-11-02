@@ -100,7 +100,7 @@ A dry run does not delete original data or stop agents. SQLite inspection uses p
 
 Conversation selection and confirmation require an interactive terminal on standard input and standard error. Prompts and errors go to standard error; results go to standard output. For scripts, preview with `clean --dry-run`, then use `clean --yes` only when skipping confirmation is intentional. Piping `y` into an interactive command is refused before discovery or mutation.
 
-Exit codes are `0` for success or deliberate No/Escape cancellation, `1` for errors or incomplete operations, and `130` for Ctrl-C during an interactive prompt. The deprecated `conversations --allow-running` option is accepted only with `--dry-run`; it cannot authorize deletion.
+Exit codes are `0` for success or deliberate No/Escape cancellation, `1` for errors or incomplete operations, and `130` for Ctrl-C during an interactive prompt.
 
 ## Documentation and community
 

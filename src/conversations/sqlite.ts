@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
 type RowSelector = (table: string, row: Record<string, unknown>) => boolean;
@@ -51,15 +50,6 @@ function tableRows(database: DatabaseSync, table: string): Record<string, unknow
 function serializeRows(rows: Record<string, unknown>[]): string[] {
   return rows.map((row) => JSON.stringify(row, (_, value) =>
     typeof value === "bigint" ? { sqliteInteger: String(value) } : value)).sort();
-}
-
-export function sqliteSelectionSnapshot(database: DatabaseSync, selected: RowSelector): string {
-  const hash = createHash("sha256");
-  for (const table of tableNames(database).sort()) {
-    const rows = tableRows(database, table).filter((row) => selected(table, row));
-    if (rows.length) hash.update(JSON.stringify([table, serializeRows(rows)]));
-  }
-  return hash.digest("hex");
 }
 
 // 外鍵及觸發器可能連帶變更其他對話；只允許明確選取的資料列消失。
