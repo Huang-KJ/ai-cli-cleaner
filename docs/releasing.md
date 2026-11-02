@@ -6,7 +6,7 @@ Release artifacts contain the compiled CLI, bundled runtime dependencies, docume
 
 Keep `package.json` and the lockfile's root metadata at the same version. Tags use `v` followed by the exact SemVer, including any prerelease or build identifier. Packaging and the updater share validation in `lib/version.cjs`.
 
-A SemVer prerelease produces a prerelease GitHub Draft; a stable version produces a stable Draft. npm dist-tags are separate: `publishConfig` currently selects the public npm registry, public access, and the `beta` tag. For a stable publication, review and update that channel explicitly before using `latest`.
+A SemVer prerelease produces a prerelease GitHub Draft; a stable version produces a stable Draft. npm dist-tags are separate: `publishConfig` selects the public npm registry, public access, and the `latest` tag, so every npm publication, prereleases included, becomes the default `npm install` version. The `beta` dist-tag is no longer updated.
 
 ## Verify and package
 
@@ -42,13 +42,13 @@ The updater uses public, published GitHub releases. Stable is the default channe
 Confirm package ownership, registry, version, access, and dist-tag. Authenticate interactively; keep credentials and one-time codes out of files, commands, and reports. From the project root, preview the exact archive:
 
 ```bash
-npm publish ./release/ai-cli-cleaner-0.1.0-beta.1.tgz --tag beta --access public --dry-run
+npm publish ./release/ai-cli-cleaner-0.1.0-beta.1.tgz --tag latest --access public --dry-run
 ```
 
 Review its file list and metadata, then publish the same verified archive:
 
 ```bash
-npm publish ./release/ai-cli-cleaner-0.1.0-beta.1.tgz --tag beta --access public
+npm publish ./release/ai-cli-cleaner-0.1.0-beta.1.tgz --tag latest --access public
 ```
 
 A dry run does not prove registry ownership or publication success. A published name/version cannot be reused with different bytes. Verify the registry's version, dist-tag, integrity, and a real installation before announcing availability. npm publication does not create GitHub release assets or make the built-in updater available. No automated npm publishing workflow is configured.

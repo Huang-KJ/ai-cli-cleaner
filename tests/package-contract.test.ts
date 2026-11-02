@@ -69,7 +69,7 @@ describe("package and CI contract", () => {
       publishConfig: {
         access: "public",
         registry: "https://registry.npmjs.org/",
-        tag: "beta"
+        tag: "latest"
       },
       allowScripts: { fsevents: false },
       type: "module",

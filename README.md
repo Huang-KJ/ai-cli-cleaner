@@ -1,7 +1,7 @@
 # AI CLI Cleaner
 
 [![CI](https://github.com/Huang-KJ/ai-cli-cleaner/actions/workflows/ci.yml/badge.svg)](https://github.com/Huang-KJ/ai-cli-cleaner/actions/workflows/ci.yml)
-[![npm beta](https://img.shields.io/npm/v/ai-cli-cleaner/beta?label=npm%20beta)](https://www.npmjs.com/package/ai-cli-cleaner)
+[![npm](https://img.shields.io/npm/v/ai-cli-cleaner?label=npm)](https://www.npmjs.com/package/ai-cli-cleaner)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platform: macOS 26+](https://img.shields.io/badge/platform-macOS%2026%2B-lightgrey.svg)](docs/compatibility.md)
 [![Node.js: 22 / 24 / 26](https://img.shields.io/badge/node-22%20%7C%2024%20%7C%2026-339933.svg)](docs/installation.md#requirements)
@@ -15,12 +15,12 @@ This is beta software. Keep an independent backup, review the preview and [forma
 Requires macOS 26 or later, Node.js `^22.22.2`, `^24.15.0`, or `^26.0.0`, and npm 12.x. Node.js and npm must already be installed.
 
 ```bash
-npm install --global ai-cli-cleaner@beta
+npm install --global ai-cli-cleaner@latest
 ai-cleaner --version
 ai-cleaner doctor --all
 ```
 
-The package includes the compiled CLI, native helpers, and bundled runtime dependencies; no source build is required. Rerun the same npm install command for beta updates. The built-in updater uses separately published GitHub releases, so it does not follow npm dist-tags. See [installation and updates](docs/installation.md) for runtime setup, source/archive installation, and removal.
+The package includes the compiled CLI, native helpers, and bundled runtime dependencies; no source build is required. Every release, including betas, is published with npm's `latest` tag, so rerunning the same command installs the newest version. The built-in updater uses separately published GitHub releases, so it does not follow npm dist-tags. See [installation and updates](docs/installation.md) for runtime setup, source/archive installation, and removal.
 
 ## Quick start
 

@@ -1,6 +1,6 @@
 # Installation and updates
 
-For the usual npm beta installation, start with [README](../README.md#install). This guide covers prerequisites, source and archive installations, update channels, and removal. The executable is named `ai-cleaner`.
+For the usual npm installation, start with [README](../README.md#install). This guide covers prerequisites, source and archive installations, update channels, and removal. The executable is named `ai-cleaner`.
 
 ## Requirements
 
@@ -26,10 +26,10 @@ Cleanup and conversation selection, including dry-run, refuse older systems befo
 
 ## npm installation and updates
 
-The package includes compiled code, bundled runtime dependencies, and native helpers; no compiler or source build is required. The `beta` tag selects the published beta; replace it with an exact version such as `0.1.0-beta.1` to pin a release. Add `--engine-strict` to reject unsupported Node.js/npm versions during installation:
+The package includes compiled code, bundled runtime dependencies, and native helpers; no compiler or source build is required. The `latest` tag always selects the newest published version, including betas; replace it with an exact version such as `0.1.0-beta.1` to pin a release. Add `--engine-strict` to reject unsupported Node.js/npm versions during installation:
 
 ```bash
-npm install --global --engine-strict ai-cli-cleaner@beta
+npm install --global --engine-strict ai-cli-cleaner@latest
 ```
 
 Rerun the install command to update, then run `ai-cleaner --version` and `ai-cleaner doctor --all`. The built-in updater checks GitHub releases; npm publication does not create those assets. If npm reports a global-prefix permission error, use a Node installation or user-owned prefix with appropriate permissions. Do not run cleanup as an administrator. Continue with the [quick start](../README.md#quick-start) and [recovery guidance](recovery.md).
@@ -93,7 +93,7 @@ For a direct HTTPS archive URL, npm 12 requires the additional `--allow-remote=a
 
 ## Built-in release updates
 
-For npm beta updates, use [the npm installation command](#npm-installation-and-updates). The commands below require public, published GitHub releases and do not use private repository credentials. Check, then explicitly install if desired:
+For npm updates, use [the npm installation command](#npm-installation-and-updates). The commands below require public, published GitHub releases and do not use private repository credentials. Check, then explicitly install if desired:
 
 ```bash
 ai-cleaner update
