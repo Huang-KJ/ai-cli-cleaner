@@ -49,3 +49,12 @@ jobs:
       - name: Audit dependencies
         run: node scripts/audit-dependencies.cjs
       - run: npm run check
+      # 使用者多半直接用 Node.js 內建的 npm（Node 22 為 npm 10，Node 24／26 為 npm 11）安裝。
+      - name: Install the package with the npm bundled with Node.js
+        run: |
+          bundled_npm="$(dirname "$(command -v node)")/npm"
+          "$bundled_npm" --version
+          npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP"
+          "$bundled_npm" install --global --prefix "$RUNNER_TEMP/bundled-npm" --engine-strict --offline --ignore-scripts --no-audit --no-fund "$RUNNER_TEMP"/ai-cli-cleaner-*.tgz
+          "$RUNNER_TEMP/bundled-npm/bin/ai-cleaner" --version
+          "$RUNNER_TEMP/bundled-npm/bin/ai-cleaner" doctor --target codex --json | node -e 'let d = ""; process.stdin.on("data", (c) => d += c).on("end", () => { if (!JSON.parse(d).checks.filter((c) => c.id.startsWith("tool:")).every((c) => c.ok)) process.exit(1); });'

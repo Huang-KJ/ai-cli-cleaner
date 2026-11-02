@@ -12,7 +12,7 @@ This is beta software. Keep an independent backup, review the preview and [forma
 
 ## Install
 
-Requires macOS 26 or later, Node.js `^22.22.2`, `^24.15.0`, or `^26.0.0`, and npm 12.x. Node.js and npm must already be installed.
+Requires macOS 26 or later, Node.js `^22.22.2`, `^24.15.0`, or `^26.0.0`, and npm 10, 11, or 12; the npm bundled with those Node.js versions works. Node.js and npm must already be installed.
 
 ```bash
 npm install --global ai-cli-cleaner@latest

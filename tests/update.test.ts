@@ -444,11 +444,20 @@ describe("verified GitHub release installation", () => {
     await expect(installUpdate(setup.result, { ...setup, run })).rejects.toThrow("active npm global prefix");
     expect(run.mock.calls.some(([args]) => args[0] === "install")).toBe(false);
   });
-  it("refuses unsupported npm before downloading assets", async () => {
+  it.each(["9.9.4", "13.0.0", "12.0.0-pre.1"])("refuses unsupported npm %s before downloading assets", async (npmVersion) => {
     const setup = await fixture();
-    const run = vi.fn(async (args: string[]) => args[0] === "prefix" ? setup.prefix : args[0] === "root" ? setup.globalRoot : "11.0.0");
-    await expect(installUpdate(setup.result, { ...setup, run })).rejects.toThrow("npm 12");
+    const run = vi.fn(async (args: string[]) => args[0] === "prefix" ? setup.prefix : args[0] === "root" ? setup.globalRoot : npmVersion);
+    await expect(installUpdate(setup.result, { ...setup, run })).rejects.toThrow("npm 10, 11, or 12");
     expect(setup.transport).toHaveBeenCalledTimes(1);
+  });
+  it.each(["10.9.9", "11.19.1"])("installs with npm %s, which has no --allow-file option", async (npmVersion) => {
+    const setup = await fixture();
+    const run = vi.fn<UpdateRunner>(async (args, options) => args[0] === "--version" ? npmVersion : setup.run(args, options));
+    await installUpdate(setup.result, { ...setup, run });
+    const install = run.mock.calls.find(([args]) => args[0] === "install")!;
+    expect(install[0]).not.toContain("--allow-file=all");
+    expect(install[0]).toEqual(expect.arrayContaining(["--ignore-scripts", "--offline", "--engine-strict"]));
+    expect(setup.trash).toHaveBeenCalledOnce();
   });
   it("rejects corrupt archives, incorrect package names and version substitution", async () => {
     for (const [bytes, sum, error] of [[archive(), "0".repeat(64), "checksum verification"], [archive("2.0.0"), undefined, "name or version"], [archive("1.0.0", "other"), undefined, "name or version"], [Buffer.from("not gzip"), undefined, "Invalid or oversized"]] as const) {

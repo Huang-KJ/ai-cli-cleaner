@@ -77,7 +77,7 @@ describe("package and CI contract", () => {
       files: ["dist", "lib/native-helper.cjs", "lib/claim-helper.cjs", "native/claims.m", "lib/version.cjs", "vendor", "docs/*.md", "SECURITY.md", "CONTRIBUTING.md"],
       os: ["darwin"],
       engines: {
-        npm: ">=12 <13"
+        npm: ">=10 <13"
       },
       scripts: {
         prebuild: "npm run clean",

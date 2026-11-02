@@ -2,7 +2,7 @@
 
 AI CLI Cleaner supports macOS 26 or later on Intel and Apple Silicon. Older macOS versions are outside the support policy. `clean` and `conversations`, including dry-run, refuse to run there before reading conversations or stopping agents. Diagnostics, help, and read-only recovery queries remain available.
 
-The Node.js range is `^22.22.2 || ^24.15.0 || ^26.0.0`, with npm 12.x. The [CI workflow](../.github/workflows/ci.yml) checks the runtime matrix. Consult its results for the revision you use; a configured job is not evidence of a successful run.
+The Node.js range is `^22.22.2 || ^24.15.0 || ^26.0.0`, with npm 10, 11, or 12 for installation. The [CI workflow](../.github/workflows/ci.yml) checks the runtime matrix. Consult its results for the revision you use; a configured job is not evidence of a successful run.
 
 ## Runtime and architecture
 

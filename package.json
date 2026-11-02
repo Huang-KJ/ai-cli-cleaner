@@ -9,7 +9,7 @@
   "bugs": {
     "url": "https://github.com/Huang-KJ/ai-cli-cleaner/issues"
   },
-  "packageManager": "npm@12.2.0",
+  "packageManager": "npm@12.2.1",
   "allowScripts": {
     "fsevents": false
   },
@@ -74,7 +74,7 @@
   ],
   "engines": {
     "node": "^22.22.2 || ^24.15.0 || ^26.0.0",
-    "npm": ">=12 <13"
+    "npm": ">=10 <13"
   },
   "license": "MIT",
   "publishConfig": {

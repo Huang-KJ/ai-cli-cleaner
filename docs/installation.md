@@ -9,7 +9,7 @@ For the usual npm installation, start with [README](../README.md#install). This 
 | Operating system | macOS 26 or later |
 | Processor | Intel x64 or Apple Silicon arm64 |
 | Node.js | `^22.22.2`, `^24.15.0`, or `^26.0.0` |
-| npm | 12.x; development and CI pin 12.2.0 |
+| npm | 10, 11, or 12 for installation (the npm bundled with supported Node.js works); development and CI pin 12.2.1 |
 | System tools | Executable `/bin/ps` and `/usr/sbin/lsof` |
 
 Install compatible Node.js and npm versions separately, then check them before installing the CLI:
@@ -43,10 +43,10 @@ git clone https://github.com/Huang-KJ/ai-cli-cleaner.git
 cd ai-cli-cleaner
 ```
 
-If your supported Node.js installation has an older npm, optionally bootstrap pinned npm 12.2.0 **before** installing dependencies. This downloads and verifies the archive's SHA-512. Choose a new absolute destination that does not exist:
+If your supported Node.js installation has an older npm, optionally bootstrap pinned npm 12.2.1 **before** installing dependencies. This downloads and verifies the archive's SHA-512. Choose a new absolute destination that does not exist:
 
 ```bash
-npm_runtime="$PWD/../ai-cleaner-npm-12.2.0"
+npm_runtime="$PWD/../ai-cleaner-npm-12.2.1"
 node scripts/bootstrap-npm.cjs "$npm_runtime"
 export PATH="$npm_runtime/node_modules/.bin:$PATH"
 npm --version
@@ -102,7 +102,7 @@ ai-cleaner update --install
 
 The default channel is stable. Add `--prerelease` to either command to include published GitHub betas. Draft releases are excluded. Cleanup never performs background update checks.
 
-The updater verifies the selected archive against its release checksum before invoking npm. Self-update requires a regular global installation, a writable owning prefix, and npm 12 installed in that prefix or alongside the running Node.js. It uses the running Node.js and a fixed npm location instead of trusting `PATH` or inherited npm configuration. Toolchain ownership and write-permission checks apply. It refuses source checkouts, linked installations, administrator execution, reinstalls, and downgrades. Temporary downloads move to macOS Trash afterward.
+The updater verifies the selected archive against its release checksum before invoking npm. Self-update requires a regular global installation, a writable owning prefix, and npm 10, 11, or 12 installed in that prefix or alongside the running Node.js. It uses the running Node.js and a fixed npm location instead of trusting `PATH` or inherited npm configuration. Toolchain ownership and write-permission checks apply. It refuses source checkouts, linked installations, administrator execution, reinstalls, and downgrades. Temporary downloads move to macOS Trash afterward.
 
 A missing release, network failure, invalid toolchain, or failed verification stops this update route. You can always download and verify an available release archive manually.
 

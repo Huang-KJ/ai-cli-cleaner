@@ -145,7 +145,7 @@ async function bindNpm(prefix: string): Promise<UpdateRunner> {
       return result.stdout.trim();
     };
   } catch (error) {
-    throw new Error("Cannot bind a trusted npm toolchain. Install npm 12 in this global prefix or alongside the running Node.js, then retry.", { cause: error });
+    throw new Error("Cannot bind a trusted npm toolchain. Install npm 10, 11, or 12 in this global prefix or alongside the running Node.js, then retry.", { cause: error });
   }
 }
 
@@ -202,7 +202,8 @@ export async function installUpdate(result: UpdateResult, options: InstallOption
   const globalInfo = await fs.lstat(path.join(globalRoot, packageName));
   if (!globalInfo.isDirectory() || globalInfo.isSymbolicLink()) throw new Error("Self-update does not support npm link installations.");
   const npmVersion = (await run(["--version"], { env: installEnvironment() })).trim();
-  if (!/^12\.\d+\.\d+$/.test(npmVersion)) throw new Error("Self-update requires npm 12. Install npm 12, then retry.");
+  const npmMajor = Number(/^(1[0-2])\.\d+\.\d+$/.exec(npmVersion)?.[1]);
+  if (!npmMajor) throw new Error("Self-update requires npm 10, 11, or 12. Install a supported npm, then retry.");
   const transport = options.transport ?? request;
   const sums = await bounded(transport, checksums.url, checksums.size, "application/octet-stream");
   if (sums.length !== checksums.size) throw new Error("GitHub checksum asset size does not match metadata.");
@@ -234,7 +235,9 @@ export async function installUpdate(result: UpdateResult, options: InstallOption
     await fs.writeFile(file, bytes, { flag: "wx", mode: 0o600 });
     await fs.writeFile(path.join(stage, "user.npmrc"), "", { flag: "wx", mode: 0o600 });
     await fs.writeFile(path.join(stage, "global.npmrc"), "", { flag: "wx", mode: 0o600 });
-    await run(["install", "--global", "--prefix", prefix, "--ignore-scripts", "--offline", "--engine-strict", "--no-audit", "--no-fund", "--allow-file=all", "--cache", path.join(stage, "npm-cache"), "--", file], { env: installEnvironment(stage) });
+    // npm 12 起從本機檔案安裝需明確允許；npm 10、11 沒有這個選項。
+    const allowFile = npmMajor >= 12 ? ["--allow-file=all"] : [];
+    await run(["install", "--global", "--prefix", prefix, "--ignore-scripts", "--offline", "--engine-strict", "--no-audit", "--no-fund", ...allowFile, "--cache", path.join(stage, "npm-cache"), "--", file], { env: installEnvironment(stage) });
     const installed: unknown = JSON.parse(await fs.readFile(path.join(packageRoot, "package.json"), "utf8"));
     if (!record(installed) || installed.name !== packageName || installed.version !== result.latestVersion) throw new Error("npm did not install the expected package version. Inspect the installation before retrying.");
   } finally {

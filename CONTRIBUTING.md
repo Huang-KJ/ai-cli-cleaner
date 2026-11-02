@@ -10,7 +10,7 @@ Use synthetic examples. Do not attach real conversations, raw databases, complet
 
 ## Develop a change
 
-Work from a repository checkout or source archive. The release tarball contains compiled code, documentation, bundled runtime dependencies, and native provenance rather than the development tree. Use a Node.js version supported by `package.json` and npm 12.x; the [installation guide](docs/installation.md#requirements) includes the pinned npm bootstrap.
+Work from a repository checkout or source archive. The release tarball contains compiled code, documentation, bundled runtime dependencies, and native provenance rather than the development tree. Use a Node.js version supported by `package.json`; development uses npm 12, pinned through `packageManager`, and the [installation guide](docs/installation.md#requirements) includes the pinned npm bootstrap.
 
 ```bash
 npm ci
@@ -46,7 +46,7 @@ This opt-in test creates synthetic files and exercises the native helper against
 
 The [CI configuration](.github/workflows/ci.yml) defines seven checks on macOS 26, covering the engines minimums and Node.js 22, 24, and 26 lines, including Intel with Node.js 24. It runs on pushes to `main` and `v*` tags, pull requests, and manual `workflow_dispatch` requests. Feature and Dependabot branches use the pull-request run without a duplicate push run.
 
-To run one configuration locally, select a supported Node.js version and npm 12.2.0, then run `npm ci` and `npm run check`. A local pass does not replace the full matrix. Verify the exact code, OS, runtime, architecture, and result for each run; a workflow definition alone is not execution evidence.
+To run one configuration locally, select a supported Node.js version and npm 12.2.1, then run `npm ci` and `npm run check`. A local pass does not replace the full matrix. Verify the exact code, OS, runtime, architecture, and result for each run; a workflow definition alone is not execution evidence.
 
 ## Real upstream CLI validation
 

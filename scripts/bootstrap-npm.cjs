@@ -3,8 +3,8 @@ const { createHash } = require("node:crypto");
 const { promises: fs } = require("node:fs");
 const path = require("node:path");
 
-const version = "12.2.0";
-const integrity = "ZsJjKpTnlmSXOLLXiU1xDCzC4Wlok4IwZmh/aw2KUuXytU7q6qMv/cUT7MoeSf95Slwuw/lRXYefGzGCspHPNQ==";
+const version = "12.2.1";
+const integrity = "bKCmFRVT/BB+YPEYbZwQ1XUI3N5t4xKSpU1MxOjo7z3iWzKBJ0ZXRC1xFdEN+TC7N5TdywaBzf2dMXGJq/e2PQ==";
 const limit = 20 * 1024 * 1024;
 
 async function downloadArchive() {
