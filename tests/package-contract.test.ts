@@ -159,6 +159,17 @@ describe("package and CI contract", () => {
     expect(releaseWorkflow).toContain("cancel-in-progress: false");
     expect(releaseWorkflow).toContain("timeout-minutes: 30");
     expect(releaseWorkflow).toContain("run: node scripts/draft-release.mjs");
+    // OIDC 發布權限只給不安裝開發相依套件的發布工作。
+    const [buildJob, publishJob] = releaseWorkflow.split(/^  publish:$/m);
+    expect(publishJob).toBeDefined();
+    expect(buildJob).not.toContain("id-token");
+    expect(publishJob).toContain("id-token: write");
+    expect(publishJob).toContain("needs: draft-release");
+    expect(publishJob).toContain("run: node scripts/publish-release.mjs");
+    expect(publishJob).not.toMatch(/npm (?:ci|install|run)|cache: npm|NODE_AUTH_TOKEN|NPM_TOKEN|secrets\./);
+    const releasePins = [...releaseWorkflow.matchAll(/uses: [^@\s]+@([^\s#]+)/g)].map((match) => match[1]);
+    expect(releasePins).toHaveLength(6);
+    for (const pin of releasePins) expect(pin).toMatch(/^[a-f0-9]{40}$/);
     expect(workflow).toContain("fail-fast: false");
     expect(workflow.match(/- run: npm ci/g)).toHaveLength(1);
     expect(workflow.match(/- run: npm run check/g)).toHaveLength(1);

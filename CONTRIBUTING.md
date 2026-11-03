@@ -106,4 +106,4 @@ npm run release:pack
 
 Packaging verifies the native artifact and dependency audit first, then runs the complete check and writes the versioned archive and `release/SHA256SUMS`. Package contract tests inspect bundled dependency versions and native files, install the actual archive globally with an empty npm cache in offline mode, and run non-destructive commands. See [releasing](docs/releasing.md) for version, tag, publication review, and Draft channel checks.
 
-The tag workflow only creates or updates an unpublished Draft. Stable versions remain stable-channel drafts; versions with a SemVer prerelease identifier are marked as prereleases. Publishing a release or changing repository visibility requires the maintainer's explicit authorization.
+Pushing a `v*` tag publishes the release: the workflow packages it into a Draft, publishes the same archive to npm under `latest` through trusted publishing, and then publishes the Draft. Versions with a SemVer prerelease identifier are marked as GitHub prereleases. Pushing a release tag or changing repository visibility requires the maintainer's explicit authorization.

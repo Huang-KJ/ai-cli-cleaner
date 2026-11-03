@@ -29,29 +29,26 @@ The package allowlist and package-contract tests cover compiled files, bundled d
 
 `npm ci` follows the lockfile; bundled runtime dependencies preserve the verified versions in the release archive. Publish the verified archive rather than repacking a working directory. Any shipped-file change requires rebuilding and checking the archive again. Checksums establish byte integrity, not independent author authentication.
 
-## GitHub release workflow
+## Release workflow
 
-The [release workflow](../.github/workflows/release.yml) responds to `v*` tags and calls `release:pack`, then `scripts/draft-release.mjs`. It attaches the archive and `SHA256SUMS` to an unpublished Draft whose version, channel, and target commit match the tag. Same-tag jobs are serialized. Published, ambiguous, or mismatched existing releases stop the workflow.
+Pushing a `v*` tag runs the [release workflow](../.github/workflows/release.yml); same-tag runs are serialized. Push the tag only after the complete [CI matrix](../.github/workflows/ci.yml) passes for that commit, and after reviewing [compatibility](compatibility.md), [recovery](recovery.md), and the [security policy](../SECURITY.md).
 
-Before publishing a Draft, verify its tag, target commit, channel, downloaded assets, and checksums. Require the complete [CI matrix](../.github/workflows/ci.yml) for that commit; packaging on one runner does not replace it. Review [compatibility](compatibility.md), [recovery](recovery.md), and the [security policy](../SECURITY.md). The workflow neither publishes the Draft nor runs `npm publish`.
+1. `draft-release` runs `npm ci` and `release:pack`, then `scripts/draft-release.mjs` attaches the archive and `SHA256SUMS` to an unpublished Draft whose version, channel, and target commit match the tag. Published, ambiguous, or mismatched existing releases stop the workflow.
+2. `publish` is the only job with an npm OIDC token. It installs no project dependencies; `scripts/publish-release.mjs` checks the archive against `SHA256SUMS`, publishes those exact bytes to npm under `latest` with provenance, and then publishes the Draft. The remote tag is re-verified before each write. A rerun skips npm when the registry already has identical bytes and stops if they differ.
 
-`ai-cleaner update` reports the npm `latest` version and the npm command that installs it. The built-in updater of 0.1.0-beta.6 and earlier still reads published GitHub releases, so keep publishing them.
+`ai-cleaner update` reports the npm `latest` version and the npm command that installs it. The built-in updater of 0.1.0-beta.6 and earlier still reads published GitHub releases, so every release is also published there.
 
-## npm publication
+## npm trusted publishing
 
-Confirm package ownership, registry, version, access, and dist-tag. Authenticate interactively; keep credentials and one-time codes out of files, commands, and reports. From the project root, preview the exact archive:
+npm accepts the workflow's OIDC token only after the package's trusted publisher is configured on npmjs.com (package settings → Trusted publishing): GitHub Actions, owner `Huang-KJ`, repository `ai-cli-cleaner`, workflow `release.yml`, no environment. Trusted publishing needs npm 11.5.1 or later, which the pinned npm satisfies. After it works, set the package's publishing access to require two-factor authentication and disallow tokens.
 
-```bash
-npm publish ./release/ai-cli-cleaner-0.1.0-beta.1.tgz --tag latest --access public --dry-run
-```
-
-Review its file list and metadata, then publish the same verified archive:
+If the publish job fails, the Draft stays unpublished. Fix the cause and rerun the failed job. For a manual fallback, authenticate interactively, keep credentials and one-time codes out of files, commands, and reports, and publish the verified archive downloaded from the Draft:
 
 ```bash
 npm publish ./release/ai-cli-cleaner-0.1.0-beta.1.tgz --tag latest --access public
 ```
 
-A dry run does not prove registry ownership or publication success. A published name/version cannot be reused with different bytes. Verify the registry's version, dist-tag, integrity, and a real installation before announcing availability. npm publication does not create GitHub release assets or make the built-in updater available. No automated npm publishing workflow is configured.
+A published name/version cannot be reused with different bytes. Verify the registry's version, dist-tag, integrity, and a real installation before announcing availability.
 
 ## Publication review
 
