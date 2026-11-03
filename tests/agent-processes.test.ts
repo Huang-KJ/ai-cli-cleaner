@@ -126,6 +126,19 @@ describe("agent process detection", () => {
     expect(identifyAgent("/usr/local/Caskroom/grok-build/1.0.41/grok-1.0.41-macos-x86_64", "grok-1.0.41-maco")).toBe("grok");
   });
 
+  it("recognizes the Grok installer's agent and grok links by their versioned accounting name", () => {
+    expect(identifyAgent("agent", "grok-1.0.30-maco")).toBe("grok");
+    expect(identifyAgent("agent --resume", "grok-1.0.30-maco")).toBe("grok");
+    expect(identifyAgent("/Users/Fixture User/.grok/bin/agent", "grok-1.0.30-maco")).toBe("grok");
+    expect(identifyAgent("/Users/fixture/.grok/bin/grok chat", "grok-1.0.30-maco")).toBe("grok");
+    expect(identifyAgent("/Users/fixture/.grok/downloads/grok-1.0.30-macos-arm64", "grok-1.0.30-maco")).toBe("grok");
+    // 沒有 Grok 會計名稱時，通用的 agent 指令不屬於 Grok。
+    expect(identifyAgent("agent")).toBeUndefined();
+    expect(identifyAgent("/Users/fixture/.local/bin/agent", "agent")).toBeUndefined();
+    expect(() => identifyAgent("/Users/fixture/.local/bin/agent", "grok-1.0.30-maco")).toThrow(/Cannot confirm the agent executable location/);
+    expect(() => identifyAgent("/Users/fixture/.grok/bin/agentx", "grok-1.0.30-maco")).toThrow(/Cannot confirm the agent executable location/);
+  });
+
   it("fails closed on ambiguous native Node boundaries and ignores script paths in arguments", () => {
     expect(identifyAgent("/usr/local/bin/node /usr/local/lib/node_modules/@openai/codex/bin/codex.js app-server", "node")).toBe("codex");
     expect(identifyAgent("/usr/local/bin/node /tmp/other.js /usr/local/lib/node_modules/@openai/codex/bin/codex.js", "node")).toBeUndefined();

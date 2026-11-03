@@ -71,6 +71,9 @@ export function identifyAgent(command: string, accounting?: string): ProviderId 
     // 原生安裝經 ~/.local/bin/claude 連結啟動時，kernel 會計名稱取自實際版本檔名，argv0 仍是 claude。
     if (/^\d+\.\d+\.\d+(?:-[\w.-]+)?$/.test(accounting) &&
         /^(?:claude|\/[^\r\n]*\/\.local\/bin\/claude)(?:\s|$)/.test(command)) return "claude";
+    // Grok 安裝器的 ~/.grok/bin/agent 與 grok 都連到 downloads 內的版本檔，會計名稱取自該檔名。
+    if (/^grok-/.test(accounting) && (/^(?:agent|grok)(?:\s|$)/.test(command) ||
+        /^\/[^\r\n]*\/\.grok\/(?:bin\/(?:agent|grok)|downloads\/grok-[^/\s]+-macos-(?:x86_64|arm64))(?:\s|$)/.test(command))) return "grok";
     // argv0 與 comm 都可偽造；先以 kernel 會計名稱限制 provider，再放寬 App 前綴空格。
     const provider = /^(?:ChatGPT$|Codex(?: |$)|codex(?:-|$))/.test(accounting) ? "codex"
       : /^(?:Antigravity(?: |$)|antigravity$|agy$)/.test(accounting) ? "antigravity"
