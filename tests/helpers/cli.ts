@@ -17,7 +17,6 @@ export function createCliTestFixture(overrides: Partial<CliDependencies> = {}) {
     listRecovery: vi.fn(async () => { throw new Error("Unexpected recovery listing."); }),
     inspectRecovery: vi.fn(async () => { throw new Error("Unexpected recovery inspection."); }),
     checkForUpdate: vi.fn(async () => { throw new Error("Unexpected update check."); }),
-    installUpdate: vi.fn(async () => { throw new Error("Unexpected update installation."); }),
     prepareClean: vi.fn(async () => { throw new Error("Unexpected cleanup scan."); }),
     discoverConversations: vi.fn(async () => { throw new Error("Unexpected conversation discovery."); }),
     deleteConversations: vi.fn(async () => { throw new Error("Unexpected conversation deletion."); }),

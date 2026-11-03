@@ -24,13 +24,9 @@ process.exitCode = await runCli(process.argv, packageMetadata.version, {
   confirm: (options) => confirmConversationDeletion(options, { output: process.stderr }),
   selectAgent: (options) => selectConversationAgent(options, { output: process.stderr }),
   checkbox: (options) => selectConversations(options, { output: process.stderr }),
-  checkForUpdate: async (options) => {
+  checkForUpdate: async (currentVersion) => {
     const { checkForUpdate } = await import("./update.js");
-    return checkForUpdate(options);
-  },
-  installUpdate: async (release) => {
-    const { installUpdate } = await import("./update.js");
-    await installUpdate(release);
+    return checkForUpdate(currentVersion);
   },
   listRecovery: () => listOperations(),
   inspectRecovery: (id) => inspectOperation(id),

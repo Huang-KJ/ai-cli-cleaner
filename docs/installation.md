@@ -32,7 +32,7 @@ The package includes compiled code, bundled runtime dependencies, and native hel
 npm install --global --engine-strict ai-cli-cleaner@latest
 ```
 
-Rerun the install command to update, then run `ai-cleaner --version` and `ai-cleaner doctor --all`. The built-in updater checks GitHub releases; npm publication does not create those assets. If npm reports a global-prefix permission error, use a Node installation or user-owned prefix with appropriate permissions. Do not run cleanup as an administrator. Continue with the [quick start](../README.md#quick-start) and [recovery guidance](recovery.md).
+Rerun the install command to update, then run `ai-cleaner --version` and `ai-cleaner doctor --all`. If npm reports a global-prefix permission error, use a Node installation or user-owned prefix with appropriate permissions. Do not run cleanup as an administrator. Continue with the [quick start](../README.md#quick-start) and [recovery guidance](recovery.md).
 
 ## Install from source
 
@@ -91,20 +91,16 @@ Continue only if verification succeeds. A checksum from the same release detects
 
 For a direct HTTPS archive URL, npm 12 requires the additional `--allow-remote=all` option for that invocation. Downloading and checking the archive first makes the verification step explicit.
 
-## Built-in release updates
+## Update checks
 
-For npm updates, use [the npm installation command](#npm-installation-and-updates). The commands below require public, published GitHub releases and do not use private repository credentials. Check, then explicitly install if desired:
+`ai-cleaner update` asks the npm registry for the `latest` version and, when it is newer, prints the command that installs it:
 
 ```bash
 ai-cleaner update
-ai-cleaner update --install
+npm install --global --engine-strict ai-cli-cleaner@latest
 ```
 
-The default channel is stable. Add `--prerelease` to either command to include published GitHub betas. Draft releases are excluded. Cleanup never performs background update checks.
-
-The updater verifies the selected archive against its release checksum before invoking npm. Self-update requires a regular global installation, a writable owning prefix, and npm 10, 11, or 12 installed in that prefix or alongside the running Node.js. It uses the running Node.js and a fixed npm location instead of trusting `PATH` or inherited npm configuration. Toolchain ownership and write-permission checks apply. It refuses source checkouts, linked installations, administrator execution, reinstalls, and downgrades. Temporary downloads move to macOS Trash afterward.
-
-A missing release, network failure, invalid toolchain, or failed verification stops this update route. You can always download and verify an available release archive manually.
+The check sends no credentials, never runs during cleanup, and installs nothing itself. Source checkouts update through the source workflow above.
 
 ## Uninstall
 

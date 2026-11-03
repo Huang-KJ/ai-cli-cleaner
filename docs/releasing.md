@@ -35,7 +35,7 @@ The [release workflow](../.github/workflows/release.yml) responds to `v*` tags a
 
 Before publishing a Draft, verify its tag, target commit, channel, downloaded assets, and checksums. Require the complete [CI matrix](../.github/workflows/ci.yml) for that commit; packaging on one runner does not replace it. Review [compatibility](compatibility.md), [recovery](recovery.md), and the [security policy](../SECURITY.md). The workflow neither publishes the Draft nor runs `npm publish`.
 
-The updater uses public, published GitHub releases. Stable is the default channel; prereleases require `--prerelease`, and Drafts are excluded. Validate a real archive installation and an explicit update against published assets before announcing that route as available.
+`ai-cleaner update` reports the npm `latest` version and the npm command that installs it. The built-in updater of 0.1.0-beta.6 and earlier still reads published GitHub releases, so keep publishing them.
 
 ## npm publication
 

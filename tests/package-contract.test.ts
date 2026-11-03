@@ -381,7 +381,7 @@ describe("package and CI contract", () => {
 
       const updateModule = spawnSync(process.execPath, ["--input-type=module", "-e",
         `const update = await import(${JSON.stringify(pathToFileURL(join(installedPackage, "dist", "update.js")).href)});\n` +
-        "if (typeof update.checkForUpdate !== 'function' || typeof update.installUpdate !== 'function') throw new Error('Missing updater exports');\n" +
+        "if (typeof update.checkForUpdate !== 'function' || 'installUpdate' in update) throw new Error('Unexpected updater exports');\n" +
         "console.log(update.compareVersions('1.0.0', '1.0.0-beta.1'));"], {
         cwd: prefix, env: isolatedEnv, encoding: "utf8", timeout: childTimeout(), killSignal: "SIGKILL"
       });
@@ -424,8 +424,9 @@ describe("package and CI contract", () => {
 
       const updateHelp = runInstalledCli(installedExecutable, prefix, isolatedEnv, childTimeout(), "update", "--help");
       expectSuccessful(updateHelp);
-      expect(updateHelp.stdout).toContain("--install");
-      expect(updateHelp.stdout).toContain("--prerelease");
+      expect(updateHelp.stdout).toContain("npm");
+      expect(updateHelp.stdout).not.toContain("--install");
+      expect(updateHelp.stdout).not.toContain("--prerelease");
       expect(updateHelp.stdout).not.toMatch(/\p{Script=Han}/u);
 
       const emptyClean = runInstalledCli(installedExecutable, prefix, isolatedEnv, childTimeout(), "clean", "--all", "--dry-run", "--force-stop");

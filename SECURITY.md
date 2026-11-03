@@ -18,7 +18,7 @@ This is beta software. Supported formats, validation cases, and limits are docum
 
 Cleanup and recovery data remain local. Operation journals contain paths and IDs, use `0700`/`0600` permissions, and are not uploaded automatically. Trash, backups, and preflight copies may retain sensitive data. Moving data to Trash is not secure erasure. Doctor JSON omits raw HOME values and process command lines; recovery inspection can contain full paths.
 
-Update checks are explicit network operations against public GitHub releases. The updater does not read GitHub tokens or agent conversations and does not run during cleanup. Review and install an update explicitly. Checksums from a release detect byte mismatches but do not provide independent author authentication.
+`ai-cleaner update` is an explicit, read-only request for the npm registry's `latest` version. It sends no credentials, reads no agent conversations, never runs during cleanup, and installs nothing; updates are installed with npm. Release checksums detect byte mismatches but do not provide independent author authentication.
 
 ## Dependency policy
 

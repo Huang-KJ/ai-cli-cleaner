@@ -24,7 +24,7 @@ node lib/claim-helper.cjs
 
 CLI tests share output collectors and dependency defaults in [tests/helpers/cli.ts](tests/helpers/cli.ts). Unexpected scans, conversation discovery/deletion, agent shutdown, diagnostics, recovery, and update calls throw by default; the stopped-agent check passes unless a case overrides it. Override only the dependencies a case needs, and retain explicit assertions for confirmation, process guards, and output channels.
 
-Run the built CLI from the checkout with `node dist/index.js --help`. Use `npm run build` when you only need to rebuild. Development setup does not install a global command. `npm install --global .` can link a command to the checkout; retain the checkout and rebuild after source changes. The built-in updater requires a regular global archive installation and refuses source checkouts or links.
+Run the built CLI from the checkout with `node dist/index.js --help`. Use `npm run build` when you only need to rebuild. Development setup does not install a global command. `npm install --global .` can link a command to the checkout; retain the checkout and rebuild after source changes.
 
 When contributing through GitHub, create a focused branch from `main` in a checkout or fork you can access. Open a pull request with the problem, resulting behavior, compatibility implications, and actual validation results. Run `npm run check` and the dependency audit before requesting review; use the upstream acceptance tests when a changed format or data flow needs them.
 

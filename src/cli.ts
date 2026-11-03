@@ -28,8 +28,7 @@ export interface CliDependencies {
   listRecovery: () => Promise<OperationSummary[]>;
   inspectRecovery: (id: string) => Promise<OperationInspection>;
   stopAgents: (targets: ProviderId[]) => Promise<void>;
-  checkForUpdate: (options: { currentVersion: string; prerelease: boolean }) => Promise<UpdateResult>;
-  installUpdate: (release: UpdateResult) => Promise<void>;
+  checkForUpdate: (currentVersion: string) => Promise<UpdateResult>;
   prepareClean: (targets: ProviderId[], options: { includeMemories: boolean }) => Promise<CleanPlan>;
   discoverConversations: (targets: ProviderId[], options: { includeMemories: boolean }) => Promise<ConversationDiscovery>;
   deleteConversations: (
@@ -250,26 +249,12 @@ export async function runCli(
     });
 
   program.command("update")
-    .description("Check GitHub for a published release; install only with --install.")
-    .option("--install", "Verify and install a newer release in this npm global installation.", false)
-    .option("--prerelease", "Include published prereleases, such as beta versions.", false)
-    .action(async (options: { install: boolean; prerelease: boolean }) => {
-      if (options.install) await assertPlatform();
-      dependencies.log("Checking published GitHub releases…");
-      const release = await dependencies.checkForUpdate({ currentVersion: version, prerelease: options.prerelease });
-      dependencies.log(`Installed: ${displayText(release.currentVersion)}; latest ${options.prerelease ? "release" : "stable release"}: ${displayText(release.latestVersion)}.`);
-      if (!release.available) {
-        dependencies.log("No newer release is available. Nothing was installed.");
-        return;
-      }
-      dependencies.log(`Release: ${displayText(release.releaseUrl)}`);
-      if (!options.install) {
-        dependencies.log(`To install, run: ai-cleaner update --install${options.prerelease ? " --prerelease" : ""}`);
-        return;
-      }
-      dependencies.log("Verifying the release archive and updating this installation…");
-      await dependencies.installUpdate(release);
-      dependencies.log(`Updated to ${displayText(release.latestVersion)}. Run ai-cleaner --version to confirm.`);
+    .description("Check npm for a newer version; install it with npm.")
+    .action(async () => {
+      dependencies.log("Checking the npm registry…");
+      const release = await dependencies.checkForUpdate(version);
+      dependencies.log(`Installed: ${displayText(release.currentVersion)}; latest: ${displayText(release.latestVersion)}.`);
+      dependencies.log(release.available ? `To update, run: ${release.installCommand}` : "No newer version is available.");
     });
 
   const recovery = program.command("recovery")

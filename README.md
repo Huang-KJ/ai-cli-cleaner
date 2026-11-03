@@ -20,7 +20,7 @@ ai-cleaner --version
 ai-cleaner doctor --all
 ```
 
-The package includes the compiled CLI, native helpers, and bundled runtime dependencies; no source build is required. Every release, including betas, is published with npm's `latest` tag, so rerunning the same command installs the newest version. The built-in updater uses separately published GitHub releases, so it does not follow npm dist-tags. See [installation and updates](docs/installation.md) for runtime setup, source/archive installation, and removal.
+The package includes the compiled CLI, native helpers, and bundled runtime dependencies; no source build is required. Every release, including betas, is published with npm's `latest` tag, so rerunning the same command installs the newest version. `ai-cleaner update` checks whether a newer version is available. See [installation and updates](docs/installation.md) for runtime setup, source/archive installation, and removal.
 
 ## Quick start
 
@@ -81,8 +81,7 @@ Support depends on storage format and ownership checks. [Compatibility](docs/com
 | `ai-cleaner doctor --all` | Check platform, tools, data roots, and running agents. |
 | `ai-cleaner recovery list` | List local operation records. |
 | `ai-cleaner recovery inspect <id>` | Inspect backups, integrity, and manual recovery guidance. |
-| `ai-cleaner update` | Check public GitHub releases for a newer stable version. |
-| `ai-cleaner update --install` | Verify and install a published update in a supported global installation. |
+| `ai-cleaner update` | Check npm for a newer version and show the npm command that installs it. |
 
 Run `ai-cleaner <command> --help` for options. Conversation and recovery lists use the system time zone; `--timezone Asia/Taipei` or another IANA zone overrides it. `doctor`, `recovery list`, and `recovery inspect <id>` support `--json`; see [recovery](docs/recovery.md) for operation states, retained copies, and manual restoration.
 
