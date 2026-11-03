@@ -17,7 +17,7 @@ const releaseMetadata = (value: string) => ({ pkg: { name: "ai-cli-cleaner", ver
 
 function validate(tag: string) {
   return spawnSync(process.execPath, ["scripts/package-release.mjs", "--validate"], {
-    cwd: root, encoding: "utf8", env: { ...process.env, RELEASE_TAG: tag }
+    cwd: root, encoding: "utf8", env: { ...process.env, RELEASE_TAG: tag }, timeout: 30_000, killSignal: "SIGKILL"
   });
 }
 
@@ -25,7 +25,7 @@ function validateGithubTag(tag: string) {
   const environment: NodeJS.ProcessEnv = { ...process.env, GITHUB_REF_TYPE: "tag", GITHUB_REF_NAME: tag };
   delete environment.RELEASE_TAG;
   return spawnSync(process.execPath, ["scripts/package-release.mjs", "--validate"], {
-    cwd: root, encoding: "utf8", env: environment
+    cwd: root, encoding: "utf8", env: environment, timeout: 30_000, killSignal: "SIGKILL"
   });
 }
 
@@ -136,7 +136,7 @@ describe("release packaging validation", () => {
 
   it("rejects unrecognised arguments rather than silently producing release artifacts", () => {
     const result = spawnSync(process.execPath, ["scripts/package-release.mjs", "--skip-check"], {
-      cwd: root, encoding: "utf8"
+      cwd: root, encoding: "utf8", timeout: 30_000, killSignal: "SIGKILL"
     });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("Unsupported arguments");

@@ -45,7 +45,11 @@ describe("AI Agent cleaner manifests", () => {
       "~/.gemini/antigravity-ide/conversations",
       "~/.gemini/antigravity-ide/html_artifacts",
       "~/.gemini/antigravity-ide/code_tracker",
-      "~/.gemini/antigravity-ide/context_state"
+      "~/.gemini/antigravity-ide/context_state",
+      "~/.gemini/antigravity/conversation_summaries.db*",
+      "~/.gemini/antigravity/agyhub_summaries_proto.pb",
+      "~/.gemini/antigravity/conversations",
+      "~/.gemini/antigravity/brain"
     ]));
   });
 
@@ -98,6 +102,9 @@ describe("AI Agent cleaner manifests", () => {
       "~/.gemini/antigravity-ide/mcp",
       "~/.gemini/antigravity-ide/plugins",
       "~/.gemini/antigravity-ide/user_settings.pb",
+      "~/.gemini/antigravity/installation_id",
+      "~/.gemini/antigravity/knowledge",
+      "~/.gemini/antigravity/antigravity_state.pbtxt",
       "~/Library/Application Support/Antigravity",
       "~/Library/Preferences/com.google.antigravity.plist"
     ]));

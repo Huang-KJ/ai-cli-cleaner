@@ -136,7 +136,8 @@ describe("bounded provider resources", () => {
     const result = await discoverConversations(["codex"], { home });
     expect(result.conversations).toEqual([]);
     expect(result.warnings.join(" ")).toMatch(/resource limit/i);
-  }, 15_000);
+    // 三次走訪 129 層目錄在閒置的 Intel Mac 約需 6 秒，CI 的 Intel runner 曾超過 15 秒。
+  }, 60_000);
 
   it("bounds the Codex bulk metadata rollout collection before preparing mutations", async () => {
     const home = await homeFixture();

@@ -367,7 +367,7 @@ function cleanScope(targets: ProviderId[], includeMemories: boolean): string {
   const scopes: Record<ProviderId, string> = {
     codex: `Codex: conversations, indexes, attachments, voice records, ${includeMemories ? "memories, " : ""}goals, queue, generated_images, visualizations, logs, execution snapshots, ~/Documents/Codex/.DS_Store, and valid YYYY-MM-DD workspace folders in ~/Documents/Codex with all contained files (including generated and project files)`,
     copilot: "Copilot: conversation state, indexes, and command history",
-    antigravity: "Antigravity: conversations, indexes, brain, working files, generated HTML, and caches",
+    antigravity: "Antigravity: conversations, indexes, brain, working files, generated HTML, and caches, including the legacy ~/.gemini/antigravity root",
     opencode: "OpenCode: conversation databases, storage, project snapshots, and prompt history",
     grok: `Grok: conversations, ${includeMemories ? "memories, " : ""}and the active conversation index`,
     claude: `Claude Code: conversations, supported local Desktop Code sidebar records, prompt history, ${includeMemories ? "project and subagent memories, " : ""}file snapshots, plans, tasks, attachments, session state, shell snapshots, logs, and usage/feedback data`

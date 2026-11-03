@@ -36,6 +36,46 @@ describe("Antigravity scan and clean", () => {
       .toBe(false);
   });
 
+  it("cleans the legacy CLI root's conversation data and keeps its identity, runtime, and logs", async () => {
+    const home = await makeHome();
+    const root = path.join(home, ".gemini", "antigravity");
+    const removed = ["conversation_summaries.db", "conversation_summaries.db-wal", "agyhub_summaries_proto.pb", "brain", "conversations"]
+      .map((name) => path.join(root, name));
+    await mkdir(path.join(root, "brain", "conversation"), { recursive: true });
+    await mkdir(path.join(root, "conversations"), { recursive: true });
+    await writeFile(path.join(root, "brain", "conversation", "artifact.md"), "conversation");
+    await writeFile(path.join(root, "conversations", "chat.pb"), "conversation");
+    for (const name of ["conversation_summaries.db", "conversation_summaries.db-wal", "agyhub_summaries_proto.pb"]) {
+      await writeFile(path.join(root, name), "summary");
+    }
+    const kept = new Map([
+      ["installation_id", "id"], ["antigravity_state.pbtxt", "state"], [path.join("knowledge", "knowledge.lock"), ""],
+      [path.join("bin", "agy"), "runtime"], [path.join("log", "cli-20261021.log"), "log"], [path.join("crashes", "report"), "crash"]
+    ].map(([name, contents]) => [path.join(root, name), contents]));
+    for (const [file, contents] of kept) {
+      await mkdir(path.dirname(file), { recursive: true });
+      await writeFile(file, contents);
+    }
+    // CLI 以符號連結指向目前的日誌；清理不得跟隨或因此中止。
+    await symlink(path.join("log", "cli-20261021.log"), path.join(root, "cli.log"));
+
+    const summary = await scanManifests(getManifests(["antigravity"]), { home });
+    expect(summary.filter((entry) => entry.error)).toEqual([]);
+    const legacy = summary.filter((entry) => entry.exists && entry.path.startsWith(`${root}${path.sep}`));
+    expect(legacy.map((entry) => entry.path).sort()).toEqual([...removed].sort());
+
+    const trashed = path.join(home, "trashed");
+    await mkdir(trashed);
+    const trash = vi.fn<TrashFn>(async (paths) => {
+      for (const file of paths) await rename(file, path.join(trashed, path.basename(file)));
+    });
+    const result = await cleanEntries(legacy, { trash, checkOpenPaths: async () => ({ supported: true, openPaths: [] }) });
+    expect(result.failures).toEqual([]);
+    expect(result.deleted.map((entry) => entry.path).sort()).toEqual([...removed].sort());
+    for (const [file, contents] of kept) expect(await readFile(file, "utf8")).toBe(contents);
+    expect(await readFile(path.join(root, "cli.log"), "utf8")).toBe("log");
+  });
+
   it("cleans conversation data while preserving unrelated logs and cache", async () => {
     const home = await makeHome();
     const root = path.join(home, ".gemini", "antigravity-cli");

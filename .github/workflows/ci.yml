@@ -49,6 +49,8 @@ jobs:
       - name: Audit dependencies
         run: node scripts/audit-dependencies.cjs
       - run: npm run check
+        # 正常約 1.5–3.5 分鐘；卡住時在 job 上限前自行失敗，保留可供排查的日誌。
+        timeout-minutes: 12
       # 使用者多半直接用 Node.js 內建的 npm（Node 22 為 npm 10，Node 24／26 為 npm 11）安裝。
       - name: Install the package with the npm bundled with Node.js
         run: |

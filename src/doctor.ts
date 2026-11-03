@@ -41,7 +41,7 @@ export interface DoctorOptions {
 const rootPaths: Record<ProviderId, string[]> = {
   codex: ["~/.codex"],
   copilot: ["~/.copilot"],
-  antigravity: ["~/.gemini/antigravity-cli", "~/.gemini/antigravity-ide"],
+  antigravity: ["~/.gemini/antigravity-cli", "~/.gemini/antigravity-ide", "~/.gemini/antigravity"],
   opencode: ["~/.local/share/opencode", "~/.local/state/opencode"],
   grok: ["~/.grok"],
   claude: ["~/.claude"]

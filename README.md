@@ -62,7 +62,7 @@ The default retains Codex's memory databases and `memories/`, Grok's `memory/`, 
 |---|---|---|---|
 | Codex CLI / App | `codex` | Supported local records and indexes | Includes dated workspaces described above |
 | GitHub Copilot CLI | `copilot` | Supported session records and indexes | Supported local history and related data |
-| Google Antigravity CLI / IDE | `antigravity` | Blocked when either shared protobuf summary is nonempty | Includes both known CLI and IDE roots |
+| Google Antigravity CLI / IDE | `antigravity` | Blocked when either shared protobuf summary is nonempty | Includes the CLI, IDE, and legacy CLI roots |
 | OpenCode | `opencode` | Supported SQLite formats | Preserves supported account/configuration data in mixed databases |
 | Grok Build CLI | `grok` | Supported sessions and indexes | Local history; memories only with `--include-memories` |
 | Claude Code | `claude` | Preview only; use full cleanup to delete | Local history, artifacts, and supported Desktop Code sidebar records; memories only with `--include-memories` |
