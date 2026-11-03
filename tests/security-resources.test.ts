@@ -127,7 +127,7 @@ describe("bounded provider resources", () => {
     await expect(getPathSnapshot(home)).rejects.toThrow(/resource limit/i);
   });
 
-  // 三次真實磁碟掃描均重新驗證深層祖先路徑，預留 Intel CI 的 I/O 時間。
+  // 三次真實磁碟掃描各走訪 129 層目錄，預留 Intel CI 的 I/O 時間。
   it("enforces the same depth boundary in Codex discovery and artifact ownership scans", async () => {
     const home = await homeFixture();
     await fs.mkdir(path.join(home, ".codex", "sessions", ...Array<string>(129).fill("d")), { recursive: true });
@@ -136,7 +136,7 @@ describe("bounded provider resources", () => {
     const result = await discoverConversations(["codex"], { home });
     expect(result.conversations).toEqual([]);
     expect(result.warnings.join(" ")).toMatch(/resource limit/i);
-    // 三次走訪 129 層目錄在閒置的 Intel Mac 約需 6 秒，CI 的 Intel runner 曾超過 15 秒。
+    // 每層只做固定次數的檢查；逐層重驗祖先時曾在 CI 的 Intel runner 超過 15 秒。
   }, 60_000);
 
   it("bounds the Codex bulk metadata rollout collection before preparing mutations", async () => {

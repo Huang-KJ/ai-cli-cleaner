@@ -426,6 +426,13 @@ export async function validateExactStoragePath(
   const canonicalHome = await fs.realpath(path.dirname(base)).catch(() => path.resolve(path.dirname(base)));
   const relativeBase = path.relative(path.resolve(path.dirname(base)), path.resolve(base));
   const root = path.resolve(path.dirname(base), relativeBase);
+  const expectedCanonicalPath = path.resolve(canonicalHome, relativeBase, ...relativeParts);
+  // realpath 結果與預期完全相同時，每一層祖先必然是真實目錄而非連結，可省去逐層 lstat；
+  // 其他情況一律交由完整檢查判定，拒絕原因維持不變。走訪深層目錄時因此不再是 O(depth²)。
+  if (path.resolve(candidate) === path.join(root, ...relativeParts) &&
+      await matchesCanonicalPath(candidate, expectedCanonicalPath, expectedKind)) {
+    return { status: "valid", path: expectedCanonicalPath };
+  }
   let current = root;
   try {
     const rootInfo = await fs.lstat(current);
@@ -460,8 +467,6 @@ export async function validateExactStoragePath(
       }
     }
     const canonicalPath = await fs.realpath(candidate);
-    const canonicalRoot = path.resolve(canonicalHome, relativeBase);
-    const expectedCanonicalPath = path.resolve(canonicalRoot, ...relativeParts);
     if (canonicalPath !== expectedCanonicalPath) {
       return { status: "invalid", reason: `Canonical path was redirected: ${candidate}` };
     }
@@ -469,6 +474,22 @@ export async function validateExactStoragePath(
   } catch (error) {
     if (isMissing(error)) return { status: "missing" };
     return { status: "invalid", reason: `Cannot validate data path ${candidate}: ${toError(error).message}` };
+  }
+}
+
+async function matchesCanonicalPath(
+  candidate: string,
+  expectedCanonicalPath: string,
+  expectedKind: "file" | "directory" | "either"
+): Promise<boolean> {
+  try {
+    const info = await fs.lstat(candidate);
+    if (info.isSymbolicLink()) return false;
+    const kindMatches = expectedKind === "file" ? info.isFile()
+      : expectedKind === "directory" ? info.isDirectory() : info.isFile() || info.isDirectory();
+    return kindMatches && await fs.realpath(candidate) === expectedCanonicalPath;
+  } catch {
+    return false;
   }
 }
 
