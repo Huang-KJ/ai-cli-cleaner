@@ -22,7 +22,7 @@ describe("automatic npm publication contract", () => {
 
   it("publishes the verified archive under latest before publishing the GitHub draft", () => {
     expect(publishCommands({ filename }, integrity, undefined, "v1.2.3", repository)).toEqual([
-      ["npm", ["publish", `release/${filename}`, "--tag", "latest", "--access", "public"]],
+      ["npm", ["publish", `./release/${filename}`, "--tag", "latest", "--access", "public"]],
       ["gh", ["release", "edit", "v1.2.3", "--repo", repository, "--draft=false"]]
     ]);
   });

@@ -23,7 +23,8 @@ export function publishCommands(release, integrity, publishedIntegrity, tag, rep
   }
   return [
     ...(publishedIntegrity === undefined
-      ? [["npm", ["publish", path.join("release", release.filename), "--tag", "latest", "--access", "public"]]]
+      // 必須保留 ./ 前綴；npm 會把 release/x.tgz 這種寫法當成 GitHub 的 user/repo 簡寫。
+      ? [["npm", ["publish", `./release/${release.filename}`, "--tag", "latest", "--access", "public"]]]
       : []),
     ["gh", ["release", "edit", tag, "--repo", repository, "--draft=false"]]
   ];
